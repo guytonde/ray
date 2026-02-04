@@ -15,29 +15,14 @@ double DirectionalLight::distanceAttenuation(const glm::dvec3 &) const {
 glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
                                                const glm::dvec3 &p) const {
   // YOUR CODE HERE:
-  (void)p; // p is not needed if the caller already built r from p
-
-  const Scene* scene = this->getScene();              // NOT r.getScene() [file:1]
-  glm::dvec3 atten(1.0, 1.0, 1.0);
-
-  ray shadowRay(r);                                   // copy so we can march [file:1]
+  (void)p;
+  const Scene* scene = this->getScene();
+  ray shadowRay = r;     // copy -> now non-const
   isect hit;
+  if (scene->intersect(shadowRay, hit))  // OK: intersect wants ray&
+    return glm::dvec3(0.0);
 
-  while (scene->intersect(shadowRay, hit)) {          // trace toward light [file:1]
-      const Material& m = hit.getMaterial();          // material at blocker [file:1]
-      glm::dvec3 kt = m.kt(hit);                      // transmissive term [file:1]
-
-      atten *= kt;
-      if (glm::length(atten) <= 0.0) return glm::dvec3(0.0, 0.0, 0.0);
-
-      // Move origin past this intersection to keep looking for more blockers
-      glm::dvec3 newOrigin =
-          shadowRay.at(hit.getT()) + RAY_EPSILON * shadowRay.getDirection(); // epsilon [file:1]
-      shadowRay.setPosition(newOrigin);               // ray supports setPosition [file:1]
-      // direction stays the same
-  }
-
-  return atten;
+  return glm::dvec3(1.0);
   // You should implement shadow-handling code here.
   // return glm::dvec3(1.0, 1.0, 1.0);
 }
@@ -50,11 +35,11 @@ glm::dvec3 DirectionalLight::getDirection(const glm::dvec3 &) const {
 
 double PointLight::distanceAttenuation(const glm::dvec3 &P) const {
   // YOUR CODE HERE
-  double distance = glm::length(position - P);
-  double denom = constantTerm + linearTerm * distance + quadraticTerm * distance * distance;
-  if (denom < 0.0001) denom = 0.0001; // Avoid division by zero
-  double atten = 1.0 / denom;
-  return glm::clamp(atten, 0.0, 1.0); // Clamp to [0,1] as per spec
+  const double d = glm::length(position - P);
+  double denom = constantTerm + linearTerm * d + quadraticTerm * d * d;
+  if (denom < 1e-6) denom = 1e-6;
+  const double fd = 1.0 / denom;
+  return glm::clamp(fd, 0.0, 1.0);
 
   // You'll need to modify this method to attenuate the intensity
   // of the light based on the distance between the source and the
@@ -71,8 +56,26 @@ glm::dvec3 PointLight::getDirection(const glm::dvec3 &P) const {
 glm::dvec3 PointLight::shadowAttenuation(const ray &r,
                                          const glm::dvec3 &p) const {
   // YOUR CODE HERE:
+  (void)p;
+  const Scene* scene = this->getScene();
+  ray shadowRay = r;   // copy so we can pass ray& into intersect(...)
+  isect hit;
+
+  // If nothing is hit, light is unblocked
+  if (!scene->intersect(shadowRay, hit)) {
+    return glm::dvec3(1.0);
+  }
+
+  // If we hit something, it only blocks the point light if it's between
+  // the shading point and the light position.
+  const double distToLight = glm::length(position - shadowRay.getPosition());
+  if (hit.getT() < distToLight - RAY_EPSILON) {
+    return glm::dvec3(0.0);
+  }
+
+  return glm::dvec3(1.0);
   // You should implement shadow-handling code here.
-  return glm::dvec3(1, 1, 1);
+  // return glm::dvec3(1, 1, 1);
 }
 
 #define VERBOSE 0

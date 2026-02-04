@@ -19,8 +19,19 @@
 #include <glm/gtx/io.hpp>
 #include <string.h> // for memset
 
+#include <limits>   // std::numeric_limits
+#include <algorithm> // std::max
+
 #include <fstream>
 #include <iostream>
+
+// std::vector<std::thread> workers;
+// std::queue<std::pair<int,int>> workQueue;
+// std::mutex workMutex;
+
+// std::atomic<int> blocksDone{0};
+// int blocksTotal = 0;
+// std::atomic<bool> rendering{false};
 
 using namespace std;
 extern TraceUI *traceUI;
@@ -59,12 +70,10 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
   double x = double(i) / double(buffer_width);
   double y = double(j) / double(buffer_height);
 
-  unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
   col = trace(x, y);
+  col = glm::clamp(col, 0.0, 1.0);
 
-  pixel[0] = (int)(255.0 * col[0]);
-  pixel[1] = (int)(255.0 * col[1]);
-  pixel[2] = (int)(255.0 * col[2]);
+  setPixel(i, j, col);   // single write path
   return col;
 }
 
@@ -74,59 +83,102 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
 // called from here) to handle reflection, refraction, etc etc.
 glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth, double &length) {
   isect i;
-    if (!scene->intersect(r, i)) {
-        length = std::numeric_limits<double>::infinity();
-        return glm::dvec3(0.0); // (or cubemap later)
-    }
+  glm::dvec3 colorC;
 
+#if VERBOSE
+  std::cerr << "== current depth: " << depth << std::endl;
+#endif
+
+  // Hard cutoff using the TraceUI threshold value synced into RayTracer::thresh in traceSetup()
+  if (glm::compMax(thresh) < this->thresh) {
+    length = std::numeric_limits<double>::infinity();
+    return glm::dvec3(0.0, 0.0, 0.0);
+  }
+
+  if (scene->intersect(r, i)) {
+    // Record hit distance for the caller.
     length = i.getT();
 
-    const Material& m = i.getMaterial();
-    glm::dvec3 color = m.shade(scene.get(), r, i);  // local lighting only [file:1]
+    // Local illumination (Phong etc. handled in Material::shade)
+    const Material &m = i.getMaterial();
+    colorC = m.shade(scene.get(), r, i);
 
-    if (depth <= 0) return color;
+    // Recursive rays
+    if (depth > 0) {
+      const glm::dvec3 P = r.at(i.getT());
+      glm::dvec3 N = glm::normalize(i.getN());
+      const glm::dvec3 D = glm::normalize(r.getDirection());
 
-    const glm::dvec3 P = r.at(i.getT());
-    glm::dvec3 N = glm::normalize(i.getN());
-    glm::dvec3 D = glm::normalize(r.getDirection());
+      // Make N oppose the incoming direction (common convention)
+      if (glm::dot(D, N) > 0.0) N = -N;
 
-    // Ensure N opposes the incoming direction (common convention)
-    if (glm::dot(D, N) > 0.0) N = -N;
+      // ---- Reflection ----
+      const glm::dvec3 Kr = m.kr(i);
+      if (glm::compMax(Kr) > 0.0) {
+        const glm::dvec3 newThresh = thresh * Kr;
 
-    // Reflection
-    glm::dvec3 Kr = m.kr(i);
-    if (glm::compMax(Kr) > 0.0) {
-        glm::dvec3 Rdir = glm::normalize(D - 2.0 * glm::dot(D, N) * N);
-        ray rr(P + RAY_EPSILON * N, Rdir, r.getAtten() * Kr, ray::REFLECTION);
-        double tR;
-        color += Kr * traceRay(rr, thresh, depth - 1, tR);
-    }
+        if (glm::compMax(newThresh) >= this->thresh) {
+          const glm::dvec3 Rdir = glm::normalize(D - 2.0 * glm::dot(D, N) * N);
+          ray rr(P + RAY_EPSILON * N, Rdir, r.getAtten() * Kr, ray::REFLECTION);
 
-    // Refraction (basic Snell)
-    glm::dvec3 Kt = m.kt(i);
-    if (glm::compMax(Kt) > 0.0) {
-        double n1 = 1.0;
-        double n2 = m.index(i);
-        glm::dvec3 Nn = N;
-        double cosI = -glm::dot(D, Nn);
+          double tR;
+          colorC += Kr * traceRay(rr, newThresh, depth - 1, tR);
+        }
+      }
 
-        if (cosI < 0.0) { // exiting
+      // ---- Refraction (Snell) ----
+      const glm::dvec3 Kt = m.kt(i);
+      if (glm::compMax(Kt) > 0.0) {
+        const glm::dvec3 newThresh = thresh * Kt;
+
+        if (glm::compMax(newThresh) >= this->thresh) {
+          double n1 = 1.0;
+          double n2 = m.index(i);
+
+          glm::dvec3 Nn = N;
+          double cosI = -glm::dot(D, Nn);
+
+          // If we're exiting, flip normal and swap indices
+          if (cosI < 0.0) {
             cosI = -cosI;
             Nn = -Nn;
             std::swap(n1, n2);
-        }
+          }
 
-        double eta = n1 / n2;
-        double k = 1.0 - eta * eta * (1.0 - cosI * cosI);
-        if (k >= 0.0) {
-            glm::dvec3 Tdir = glm::normalize(eta * D + (eta * cosI - std::sqrt(k)) * Nn);
+          const double eta = n1 / n2;
+          const double k = 1.0 - eta * eta * (1.0 - cosI * cosI);
+
+          // Total internal reflection => no transmitted ray
+          if (k >= 0.0) {
+            const glm::dvec3 Tdir =
+                glm::normalize(eta * D + (eta * cosI - std::sqrt(k)) * Nn);
+
+            // Start on transmitted side
             ray tr(P - RAY_EPSILON * Nn, Tdir, r.getAtten() * Kt, ray::REFRACTION);
+
             double tT;
-            color += Kt * traceRay(tr, thresh, depth - 1, tT);
+            colorC += Kt * traceRay(tr, newThresh, depth - 1, tT);
+          }
         }
+      }
     }
 
-    return color;
+  } else {
+    // No intersection: background (CubeMap if enabled, else black).
+    length = std::numeric_limits<double>::infinity();
+
+    if (traceUI->cubeMap() && traceUI->getCubeMap() != nullptr) {
+      colorC = traceUI->getCubeMap()->getColor(r);
+    } else {
+      colorC = glm::dvec3(0.0, 0.0, 0.0);
+    }
+  }
+
+#if VERBOSE
+  std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
+            << std::endl;
+#endif
+  return colorC;
     /*isect i;
     glm::dvec3 colorC;
   #if VERBOSE
@@ -272,6 +324,26 @@ void RayTracer::traceSetup(int w, int h) {
   aaThresh = traceUI->getAaThreshold();
 
   // YOUR CODE HERE
+  // Additional init
+  stopTrace = false;
+
+  // Reset work queue + progress
+  {
+    std::lock_guard<std::mutex> lock(workMutex);
+    while (!workQueue.empty()) workQueue.pop();
+  }
+  blocksDone = 0;
+  blocksTotal = 0;
+  rendering = false;
+
+  const int bs = std::max(1, block_size);
+  for (int y0 = 0; y0 < buffer_height; y0 += bs) {
+    for (int x0 = 0; x0 < buffer_width; x0 += bs) {
+      std::lock_guard<std::mutex> lock(workMutex);
+      workQueue.push({x0, y0});
+      blocksTotal++;
+    }
+  }
   // FIXME: Additional initializations
 }
 
@@ -290,6 +362,52 @@ void RayTracer::traceImage(int w, int h) {
   traceSetup(w, h);
 
   // YOUR CODE HERE
+  if (!sceneLoaded()) {
+    rendering = false;
+    return;
+  }
+
+  // join any previous run
+  waitRender();
+  stopTrace = false;
+  rendering = true;
+
+  const unsigned int nThreads =
+      std::max(1u, std::min(threads, (unsigned int)MAX_THREADS)); // MAXTHREADS exists [file:1]
+
+  workers.clear();
+  workers.reserve(nThreads);
+
+  auto workerFn = [&](unsigned int tid) {
+    ray_thread_id = tid;                      // per-thread ray counter id [file:1]
+    const int bs = std::max(1, block_size); // or blocksize in the starter [file:1]
+
+    while (!stopTrace) {
+      std::pair<int,int> block;
+      {
+        std::lock_guard<std::mutex> lock(workMutex);
+        if (workQueue.empty()) break;
+        block = workQueue.front();
+        workQueue.pop();
+      }
+
+      const int x0 = block.first;
+      const int y0 = block.second;
+
+      for (int j = y0; j < std::min(y0 + bs, buffer_height) && !stopTrace; ++j) {
+        for (int i = x0; i < std::min(x0 + bs, buffer_width) && !stopTrace; ++i) {
+          tracePixel(i, j); // tracePixel computes + writes the RGB bytes [file:1]
+        }
+      }
+
+      blocksDone++;
+    }
+  };
+
+  for (unsigned int t = 0; t < nThreads; ++t)
+    workers.emplace_back(workerFn, t);
+
+  // return immediately (async), GUI will poll checkRender() [file:1]
   // FIXME: Start one or more threads for ray tracing
   //
   // TIPS: Ideally, the traceImage should be executed asynchronously,
@@ -301,25 +419,85 @@ void RayTracer::traceImage(int w, int h) {
 
 int RayTracer::aaImage() {
   // YOUR CODE HERE
+  if (!sceneLoaded()) return 0;
+
+  const int n = std::max(1, samples);          // samples per side
+  if (n == 1) return 0;
+
+  int extraRays = 0;
+
+  auto luminance = [](const glm::dvec3& c) {
+    return 0.299 * c.x + 0.587 * c.y + 0.114 * c.z;
+  };
+
+  for (int j = 0; j < buffer_height && !stopTrace; ++j) {
+    for (int i = 0; i < buffer_width && !stopTrace; ++i) {
+
+      const double w = double(buffer_width);
+      const double h = double(buffer_height);
+
+      // 4 quick samples to detect an edge
+      glm::dvec3 c0 = trace((i + 0.25) / w, (j + 0.25) / h);
+      glm::dvec3 c1 = trace((i + 0.75) / w, (j + 0.25) / h);
+      glm::dvec3 c2 = trace((i + 0.25) / w, (j + 0.75) / h);
+      glm::dvec3 c3 = trace((i + 0.75) / w, (j + 0.75) / h);
+
+      const double l0 = luminance(c0), l1 = luminance(c1), l2 = luminance(c2), l3 = luminance(c3);
+      const double lmin = std::min(std::min(l0, l1), std::min(l2, l3));
+      const double lmax = std::max(std::max(l0, l1), std::max(l2, l3));
+
+      glm::dvec3 out = (c0 + c1 + c2 + c3) * 0.25;
+
+      // If contrast is high, do full n*n stratified samples
+      if ((lmax - lmin) > aaThresh) {
+        glm::dvec3 sum(0.0);
+        int cnt = 0;
+
+        for (int sy = 0; sy < n; ++sy) {
+          for (int sx = 0; sx < n; ++sx) {
+            const double x = (i + (sx + 0.5) / double(n)) / w;
+            const double y = (j + (sy + 0.5) / double(n)) / h;
+            sum += trace(x, y);
+            cnt++;
+          }
+        }
+
+        out = sum / double(cnt);
+        extraRays += (n * n - 4);
+      }
+
+      setPixel(i, j, glm::clamp(out, 0.0, 1.0));
+    }
+  }
+
+  return extraRays;
   // FIXME: Implement Anti-aliasing here
   //
   // TIP: samples and aaThresh have been synchronized with TraceUI by
   //      RayTracer::traceSetup() function
-  return 0;
+  // return 0;
 }
 
 bool RayTracer::checkRender() {
   // YOUR CODE HERE
+  if (!rendering) return true;
+  if (stopTrace) return true;
+  return blocksDone >= blocksTotal;
   // FIXME: Return true if tracing is done.
   //        This is a helper routine for GUI.
   //
   // TIPS: Introduce an array to track the status of each worker thread.
   //       This array is maintained by the worker threads.
-  return true;
+  // return true;
 }
 
 void RayTracer::waitRender() {
   // YOUR CODE HERE
+  for (auto &th : workers) {
+    if (th.joinable()) th.join();
+  }
+  workers.clear();
+  rendering = false;
   // FIXME: Wait until the rendering process is done.
   //        This function is essential if you are using an asynchronous
   //        traceImage implementation.

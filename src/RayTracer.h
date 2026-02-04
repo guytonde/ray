@@ -13,6 +13,10 @@
 #include <thread>
 #include <time.h>
 
+#include <atomic>
+#include <utility>
+#include <vector>
+
 class Scene;
 class Pixel {
 public:
@@ -70,6 +74,12 @@ private:
   double aaThresh;
   int samples;
 
+  std::vector<std::thread> workers;
+  std::queue<std::pair<int,int>> workQueue;
+  std::mutex workMutex;
+  std::atomic<int> blocksDone;
+  int blocksTotal;
+  std::atomic<bool> rendering;
 };
 
 #endif // __RAYTRACER_H__
