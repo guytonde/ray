@@ -48,7 +48,8 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
         glm::dvec3 light_contribution = atten * shadow_atten * pLight->getColor();
         
         // Diffuse component (Lambertian)
-        double n_dot_l = glm::max(0.0, glm::dot(normal, light_dir));
+        // Use abs instead of max for two-sided lighting
+        double n_dot_l = std::abs(glm::dot(normal, light_dir));
         glm::dvec3 diffuse = kd_val * n_dot_l;
         
         // Specular component (Phong)

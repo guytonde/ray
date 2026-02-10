@@ -94,8 +94,8 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     double det = glm::dot(edge1, h);
     
     // If determinant is near zero, ray lies in plane of triangle
-    const double EPSILON = 0.0000001;
-    if (det > -EPSILON && det < EPSILON)
+    // const double EPSILON = 0.0000001;
+    if (det > -RAY_EPSILON && det < RAY_EPSILON)
         return false;
     
     double inv_det = 1.0 / det;
@@ -117,7 +117,7 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     double t = inv_det * glm::dot(edge2, q);
     
     // Ray intersection
-    if (t > EPSILON) {
+    if (t > RAY_EPSILON) {
         i.setT(t);
         i.setObject(this->parent);
         

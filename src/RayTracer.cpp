@@ -103,6 +103,9 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         // Store intersection distance
         t = i.getT();
         
+        // Small epsilon to prevent self-intersection
+        const double EPSILON = 1e-6;
+        
         // Only recurse if we haven't exceeded depth limit
         if (depth > 0) {
             // Handle reflection
@@ -116,8 +119,9 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                         r.getDirection() - 2.0 * glm::dot(r.getDirection(), normal) * normal
                     );
                     
-                    // Create reflection ray
-                    ray reflect_ray(point, reflect_dir, glm::dvec3(1,1,1), ray::REFLECTION);
+                    // Create reflection ray with offset to prevent self-intersection
+                    glm::dvec3 reflect_origin = point + EPSILON * reflect_dir;
+                    ray reflect_ray(reflect_origin, reflect_dir, glm::dvec3(1,1,1), ray::REFLECTION);
                     double dummy_t;
                     
                     // Recursively trace reflection
@@ -135,28 +139,43 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                 // Check if contribution is significant
                 if (glm::length(kt_val) > 0.0) {
                     // Determine if we're entering or exiting the object
-                    bool entering = glm::dot(r.getDirection(), normal) < 0;
-                    glm::dvec3 n = entering ? normal : -normal;
+                    // If ray and normal point in opposite directions, we're entering
+                    glm::dvec3 incident = glm::normalize(r.getDirection());
+                    double cos_i = glm::dot(incident, normal);
+                    bool entering = cos_i < 0;
                     
                     // Indices of refraction
                     double n1 = entering ? 1.0 : m.index(i);  // From air or from material
                     double n2 = entering ? m.index(i) : 1.0;  // To material or to air
                     double eta = n1 / n2;
                     
-                    // Compute refraction using Snell's law
-                    glm::dvec3 d = glm::normalize(r.getDirection());
-                    double cos_i = -glm::dot(d, n);
-                    double sin_t2 = eta * eta * (1.0 - cos_i * cos_i);
+                    // For refraction calculation, ensure cos_i is positive
+                    double cos_i_abs = std::abs(cos_i);
+                    
+                    // Compute sin²(theta_t) using Snell's law
+                    double sin_t2 = eta * eta * (1.0 - cos_i_abs * cos_i_abs);
                     
                     // Check for total internal reflection
                     if (sin_t2 <= 1.0) {
-                        double cos_t = sqrt(1.0 - sin_t2);
-                        glm::dvec3 refract_dir = glm::normalize(
-                            eta * d + (eta * cos_i - cos_t) * n
-                        );
+                        double cos_t = std::sqrt(1.0 - sin_t2);
                         
-                        // Create refraction ray
-                        ray refract_ray(point, refract_dir, glm::dvec3(1,1,1), ray::REFRACTION);
+                        // Compute refracted direction
+                        // If entering: refract into material (same hemisphere as -normal)
+                        // If exiting: refract into air (same hemisphere as normal)
+                        glm::dvec3 refract_dir;
+                        if (entering) {
+                            refract_dir = glm::normalize(
+                                eta * incident + (eta * cos_i_abs - cos_t) * normal
+                            );
+                        } else {
+                            refract_dir = glm::normalize(
+                                eta * incident - (eta * cos_i_abs - cos_t) * normal
+                            );
+                        }
+                        
+                        // Create refraction ray with offset to prevent self-intersection
+                        glm::dvec3 refract_origin = point + EPSILON * refract_dir;
+                        ray refract_ray(refract_origin, refract_dir, glm::dvec3(1,1,1), ray::REFRACTION);
                         double dummy_t;
                         
                         // Recursively trace refraction
@@ -165,8 +184,8 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                         // Add refraction contribution
                         colorC += kt_val * refract_color;
                     }
-                    // If total internal reflection occurs, we could add reflection here
-                    // but reference solution doesn't handle this correctly per requirements
+                    // If total internal reflection occurs, only reflection contributes
+                    // (already handled above if Refl() is true)
                 }
             }
         }

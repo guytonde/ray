@@ -14,27 +14,26 @@ double DirectionalLight::distanceAttenuation(const glm::dvec3 &) const {
 
 glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r, 
                                                const glm::dvec3 &p) const {
-    // Small epsilon to prevent self-intersection
-    const double SHADOW_EPSILON = 1e-6;
-    
-    // Create shadow ray from point toward light
-    // For directional light, direction is constant
+    // Get light direction
     glm::dvec3 light_dir = getDirection(p);
     
-    // Offset the origin slightly to prevent self-intersection
+    // CRITICAL: Offset along LIGHT DIRECTION, not normal
+    // This ensures we move away from the surface toward the light
+    const double SHADOW_EPSILON = 1e-4;
     glm::dvec3 shadow_origin = p + SHADOW_EPSILON * light_dir;
+    
+    // Create shadow ray
     ray shadow_ray(shadow_origin, light_dir, glm::dvec3(1,1,1), ray::SHADOW);
     
     isect shadow_isect;
     glm::dvec3 attenuation(1.0, 1.0, 1.0);
     
-    // Get scene from the light's scene pointer (inherited from SceneElement)
     // Check if shadow ray hits any objects
     if (getScene()->intersect(shadow_ray, shadow_isect)) {
         const Material& m = shadow_isect.getMaterial();
         glm::dvec3 kt_val = m.kt(shadow_isect);
         
-        // If object is not transparent (use length check for robustness)
+        // If object is not transparent
         if (glm::length(kt_val) < 0.0001) {
             return glm::dvec3(0, 0, 0);
         }
@@ -79,32 +78,31 @@ glm::dvec3 PointLight::getDirection(const glm::dvec3 &P) const {
 
 glm::dvec3 PointLight::shadowAttenuation(const ray &r, 
                                          const glm::dvec3 &p) const {
-    // Small epsilon to prevent self-intersection
-    const double SHADOW_EPSILON = 1e-6;
-    
-    // Create shadow ray from point toward light
+    // Get light direction
     glm::dvec3 light_dir = getDirection(p);
     
     // Calculate distance to light
     double light_distance = glm::length(position - p);
     
-    // Offset the origin slightly to prevent self-intersection
+    // CRITICAL: Offset along LIGHT DIRECTION, not normal
+    const double SHADOW_EPSILON = 1e-4;
     glm::dvec3 shadow_origin = p + SHADOW_EPSILON * light_dir;
+    
+    // Create shadow ray
     ray shadow_ray(shadow_origin, light_dir, glm::dvec3(1,1,1), ray::SHADOW);
     
     isect shadow_isect;
     glm::dvec3 attenuation(1.0, 1.0, 1.0);
     
-    // Get scene from the light's scene pointer (inherited from SceneElement)
     // Check if shadow ray hits any objects before reaching the light
     if (getScene()->intersect(shadow_ray, shadow_isect)) {
         // Only consider intersection if it's between point and light
-        // Account for epsilon offset in distance check
+        // Account for the epsilon offset in distance check
         if (shadow_isect.getT() < light_distance - SHADOW_EPSILON) {
             const Material& m = shadow_isect.getMaterial();
             glm::dvec3 kt_val = m.kt(shadow_isect);
             
-            // If object is not transparent (use length check for robustness)
+            // If object is not transparent
             if (glm::length(kt_val) < 0.0001) {
                 return glm::dvec3(0, 0, 0);
             }
