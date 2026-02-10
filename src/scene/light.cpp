@@ -83,7 +83,7 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
     double light_distance = glm::length(position - p);
     
     // CRITICAL: Offset along LIGHT DIRECTION, not normal
-    const double SHADOW_EPSILON = 1e-4;
+    const double SHADOW_EPSILON = RAY_EPSILON;
     glm::dvec3 shadow_origin = p + SHADOW_EPSILON * light_dir;
     
     // Create shadow ray
