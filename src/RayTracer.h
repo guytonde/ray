@@ -81,6 +81,8 @@ private:
   std::atomic<int> blocksDone{0};
   int blocksTotal = 0;
   std::atomic<bool> rendering{false};
+
+  std::vector<std::thread> worker_threads;
 };
 
 #endif // __RAYTRACER_H__

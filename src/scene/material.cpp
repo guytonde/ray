@@ -16,48 +16,62 @@ Material::~Material() {}
 // Apply the phong model to this point on the surface of the object, returning
 // the color of that point.
 glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
-  // YOUR CODE HERE
-  const glm::dvec3 P = r.at(i.getT());
-  glm::dvec3 N = glm::normalize(i.getN());
-
-  // Ambient + emissive
-  glm::dvec3 color = ke(i) + ka(i) * scene->ambient(); 
-  // ambient() is Ia in this codebase
-
-  // View direction: from hit point toward the camera
-  const glm::dvec3 V = glm::normalize(-r.getDirection());
-
-  for (const auto &pLight : scene->getAllLights()) {
-    // Direction from point to light
-    const glm::dvec3 L = glm::normalize(pLight->getDirection(P));
-
-    // Front-face only diffuse/spec (Lambert cosine term)
-    const double NdotL = glm::dot(N, L);
-    if (NdotL <= 0.0) continue;
-
-    // Shadow ray (blocked/unblocked per Lecture 3)
-    const glm::dvec3 shadowOrigin = P + RAY_EPSILON * N;
-    ray shadowRay(shadowOrigin, L, glm::dvec3(1.0), ray::SHADOW);
-    const glm::dvec3 shadow = pLight->shadowAttenuation(shadowRay, P);
-
-    // Distance attenuation (point lights only; directional returns 1)
-    const double fd = pLight->distanceAttenuation(P);
-
-    // Incoming light (per-channel)
-    const glm::dvec3 Iin = pLight->getColor() * fd * shadow;
-
-    // Diffuse (Lambert)
-    color += kd(i) * Iin * NdotL;
-
-    // Specular (Phong using v·r, as in the lecture slides)
-    const glm::dvec3 R = glm::normalize(glm::reflect(-L, N)); // reflect incoming (-L) about N
-    const double VdotR = glm::dot(V, R);
-    if (VdotR > 0.0) {
-      color += ks(i) * Iin * std::pow(VdotR, shininess(i));
+    // Get material properties at this intersection point
+    glm::dvec3 ke_val = ke(i);  // Emissive
+    glm::dvec3 ka_val = ka(i);  // Ambient
+    glm::dvec3 kd_val = kd(i);  // Diffuse
+    glm::dvec3 ks_val = ks(i);  // Specular
+    double shininess_val = shininess(i);
+    
+    // Get intersection point and normal
+    glm::dvec3 point = r.at(i.getT());
+    glm::dvec3 normal = i.getN();
+    
+    // View direction (from point to camera)
+    glm::dvec3 view_dir = glm::normalize(-r.getDirection());
+    
+    // Start with emissive and ambient components
+    glm::dvec3 color = ke_val + ka_val * scene->ambient();
+    
+    // Iterate through all lights
+    for (const auto& pLight : scene->getAllLights()) {
+        // Get light direction
+        glm::dvec3 light_dir = pLight->getDirection(point);
+        
+        // Compute distance attenuation
+        double atten = pLight->distanceAttenuation(point);
+        
+        // Compute shadow attenuation
+        glm::dvec3 shadow_atten = pLight->shadowAttenuation(r, point);
+        
+        // Combined attenuation
+        glm::dvec3 light_contribution = atten * shadow_atten * pLight->getColor();
+        
+        // Diffuse component (Lambertian)
+        double n_dot_l = glm::max(0.0, glm::dot(normal, light_dir));
+        glm::dvec3 diffuse = kd_val * n_dot_l;
+        
+        // Specular component (Phong)
+        glm::dvec3 specular(0.0, 0.0, 0.0);
+        if (n_dot_l > 0.0) {
+            // Reflection vector: R = 2(N·L)N - L
+            glm::dvec3 reflect_dir = glm::normalize(2.0 * n_dot_l * normal - light_dir);
+            
+            // R·V for specular
+            double r_dot_v = glm::max(0.0, glm::dot(reflect_dir, view_dir));
+            
+            // Phong specular: ks * (R·V)^shininess
+            if (r_dot_v > 0.0 && shininess_val > 0.0) {
+                specular = ks_val * pow(r_dot_v, shininess_val);
+            }
+        }
+        
+        // Add this light's contribution
+        color += light_contribution * (diffuse + specular);
     }
-  }
+    
+    return color;
 
-  return color;
 
   // For now, this method just returns the diffuse color of the object.
   // This gives a single matte color for every distinct surface in the
