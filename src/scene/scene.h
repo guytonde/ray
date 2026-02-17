@@ -33,7 +33,7 @@ using std::unique_ptr;
 class Light;
 class Scene;
 
-template <typename Obj> class KdTree;
+template <typename Obj> class BVH;
 
 // A SceneElement is anything that lives within a scene. The behavior is
 // intentionally very barebones, since all actual entities are descended
@@ -170,6 +170,7 @@ public:
   // Violation of this assumption may lead to double free or corruption
   void add(Geometry *obj);
   void add(Light *light);
+  void buildAcceleration(int maxDepth, int leafSize);
 
   bool intersect(ray &r, isect &i) const;
 
@@ -227,7 +228,8 @@ private:
   // hasBoundingBoxCapability() are exempt from this requirement.
   BoundingBox sceneBounds;
 
-  KdTree<Geometry> *kdtree;
+  std::unique_ptr<BVH<Geometry>> bvh;
+  std::vector<Geometry *> nonBoundedObjects;
 
   mutable std::mutex intersectionCacheMutex;
 

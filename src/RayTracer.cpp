@@ -312,6 +312,8 @@ bool RayTracer::loadScene(const char *fn) {
   if (!sceneLoaded())
     return false;
 
+  scene->buildAcceleration(traceUI->getMaxDepth(), traceUI->getLeafSize());
+
   return true;
 }
 

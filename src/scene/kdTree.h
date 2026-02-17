@@ -1,3 +1,5 @@
 #pragma once
 
-// Note: you can put kd-tree here
+#include "bvh.h"
+
+template <typename Obj> using KdTree = BVH<Obj>;

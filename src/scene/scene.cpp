@@ -1,7 +1,7 @@
 #include <cmath>
 
 #include "../ui/TraceUI.h"
-#include "kdTree.h"
+#include "bvh.h"
 #include "light.h"
 #include "scene.h"
 #include <glm/gtx/extended_min_max.hpp>
@@ -9,6 +9,7 @@
 #include <iostream>
 
 using namespace std;
+extern TraceUI *traceUI;
 
 bool Geometry::intersect(ray &r, isect &i) const {
   double tmin, tmax;
@@ -91,7 +92,7 @@ void Geometry::ComputeBoundingBox() {
   bounds.setMin(glm::dvec3(newMin));
 }
 
-Scene::Scene() { ambientIntensity = glm::dvec3(0, 0, 0); }
+Scene::Scene() : bvh(nullptr) { ambientIntensity = glm::dvec3(0, 0, 0); }
 
 Scene::~Scene() {
   for (auto &obj : objects)
@@ -102,28 +103,51 @@ Scene::~Scene() {
 
 void Scene::add(Geometry *obj) {
   obj->ComputeBoundingBox();
-  sceneBounds.merge(obj->getBoundingBox());
+  if (obj->hasBoundingBoxCapability()) {
+    sceneBounds.merge(obj->getBoundingBox());
+  } else {
+    nonBoundedObjects.push_back(obj);
+  }
   objects.emplace_back(obj);
 }
 
 void Scene::add(Light *light) { lights.emplace_back(light); }
 
+void Scene::buildAcceleration(int maxDepth, int leafSize) {
+  bvh = std::make_unique<BVH<Geometry>>(objects, maxDepth, leafSize);
+}
+
 
 // Get any intersection with an object.  Return information about the
 // intersection through the reference parameter.
 bool Scene::intersect(ray &r, isect &i) const {
-  double tmin = 0.0;
-  double tmax = 0.0;
   bool have_one = false;
-  for (const auto &obj : objects) {
-    isect cur;
-    if (obj->intersect(r, cur)) {
-      if (!have_one || (cur.getT() < i.getT())) {
-        i = cur;
-        have_one = true;
+  if (traceUI && traceUI->kdSwitch() && bvh) {
+    have_one = bvh->intersectClosest(r, i);
+  } else {
+    for (const auto &obj : objects) {
+      isect cur;
+      if (obj->intersect(r, cur)) {
+        if (!have_one || (cur.getT() < i.getT())) {
+          i = cur;
+          have_one = true;
+        }
       }
     }
   }
+
+  if (traceUI && traceUI->kdSwitch() && bvh) {
+    for (const auto &obj : nonBoundedObjects) {
+      isect cur;
+      if (obj->intersect(r, cur)) {
+        if (!have_one || (cur.getT() < i.getT())) {
+          i = cur;
+          have_one = true;
+        }
+      }
+    }
+  }
+
   if (!have_one)
     i.setT(1000.0);
   // if debugging,
