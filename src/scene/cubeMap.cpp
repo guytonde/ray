@@ -60,7 +60,7 @@ glm::dvec3 CubeMap::getColor(ray r) const {
 
   // Optional box filter using TraceUI's filter width slider (1..17)
   // If you don’t care about filtering, you can just return getMappedValue(u,v).
-  const int fw = std::max(1, traceUI->getFilterWidth());
+  const int fw = std::max(1, traceUI ? traceUI->getFilterWidth() : 1);
   if (fw == 1) {
     return tMap[face]->getMappedValue(glm::dvec2(u, v));
   }

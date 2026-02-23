@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "bbox.h"
+#include "bvh.h"
 #include "camera.h"
 #include "material.h"
 #include "ray.h"
@@ -32,8 +33,6 @@ using std::unique_ptr;
 
 class Light;
 class Scene;
-
-template <typename Obj> class KdTree;
 
 // A SceneElement is anything that lives within a scene. The behavior is
 // intentionally very barebones, since all actual entities are descended
@@ -118,6 +117,10 @@ public:
   // this should be overridden if hasBoundingBoxCapability() is true.
   virtual BoundingBox ComputeLocalBoundingBox() { return BoundingBox(); }
 
+  // Optional per-geometry acceleration structure build hook.
+  virtual void buildAcceleration([[maybe_unused]] int maxDepth,
+                                 [[maybe_unused]] int leafSize) {}
+
   void setTransform(const MatrixTransform &transform) {
     this->transform = transform;
   };
@@ -171,6 +174,7 @@ public:
   void add(Geometry *obj);
   void add(Light *light);
 
+  void buildAcceleration(int maxDepth, int leafSize);
   bool intersect(ray &r, isect &i) const;
 
   auto beginLights() const { return lights.begin(); }
@@ -227,7 +231,8 @@ private:
   // hasBoundingBoxCapability() are exempt from this requirement.
   BoundingBox sceneBounds;
 
-  KdTree<Geometry> *kdtree;
+  std::unique_ptr<BVH<Geometry>> bvh;
+  std::vector<Geometry *> nonBoundedObjects;
 
   mutable std::mutex intersectionCacheMutex;
 

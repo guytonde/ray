@@ -1,7 +1,6 @@
 #include <cmath>
 
 #include "../ui/TraceUI.h"
-#include "kdTree.h"
 #include "light.h"
 #include "scene.h"
 #include <glm/gtx/extended_min_max.hpp>
@@ -9,6 +8,7 @@
 #include <iostream>
 
 using namespace std;
+extern TraceUI *traceUI;
 
 bool Geometry::intersect(ray &r, isect &i) const {
   double tmin, tmax;
@@ -91,7 +91,7 @@ void Geometry::ComputeBoundingBox() {
   bounds.setMin(glm::dvec3(newMin));
 }
 
-Scene::Scene() { ambientIntensity = glm::dvec3(0, 0, 0); }
+Scene::Scene() : bvh(nullptr) { ambientIntensity = glm::dvec3(0, 0, 0); }
 
 Scene::~Scene() {
   for (auto &obj : objects)
@@ -104,26 +104,65 @@ void Scene::add(Geometry *obj) {
   obj->ComputeBoundingBox();
   sceneBounds.merge(obj->getBoundingBox());
   objects.emplace_back(obj);
+  bvh.reset();
+  nonBoundedObjects.clear();
 }
 
 void Scene::add(Light *light) { lights.emplace_back(light); }
 
+void Scene::buildAcceleration(int maxDepth, int leafSize) {
+  std::vector<Geometry *> boundedObjects;
+  boundedObjects.reserve(objects.size());
+  nonBoundedObjects.clear();
+  nonBoundedObjects.reserve(objects.size());
+
+  for (auto *obj : objects) {
+    obj->buildAcceleration(maxDepth, leafSize);
+    if (obj->hasBoundingBoxCapability()) {
+      boundedObjects.push_back(obj);
+    } else {
+      nonBoundedObjects.push_back(obj);
+    }
+  }
+
+  if (boundedObjects.empty()) {
+    bvh.reset();
+    return;
+  }
+
+  bvh = std::make_unique<BVH<Geometry>>(boundedObjects, maxDepth, leafSize);
+}
 
 // Get any intersection with an object.  Return information about the
 // intersection through the reference parameter.
 bool Scene::intersect(ray &r, isect &i) const {
-  double tmin = 0.0;
-  double tmax = 0.0;
   bool have_one = false;
-  for (const auto &obj : objects) {
-    isect cur;
-    if (obj->intersect(r, cur)) {
-      if (!have_one || (cur.getT() < i.getT())) {
-        i = cur;
-        have_one = true;
+  const bool useBvh =
+      (traceUI != nullptr) && traceUI->kdSwitch() && bvh && !bvh->empty();
+
+  if (useBvh) {
+    have_one = bvh->intersect(r, i);
+    for (const auto *obj : nonBoundedObjects) {
+      isect cur;
+      if (obj->intersect(r, cur)) {
+        if (!have_one || cur.getT() < i.getT()) {
+          i = cur;
+          have_one = true;
+        }
+      }
+    }
+  } else {
+    for (const auto &obj : objects) {
+      isect cur;
+      if (obj->intersect(r, cur)) {
+        if (!have_one || (cur.getT() < i.getT())) {
+          i = cur;
+          have_one = true;
+        }
       }
     }
   }
+
   if (!have_one)
     i.setT(1000.0);
   // if debugging,

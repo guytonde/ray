@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include "../scene/kdTree.h"
+#include "../scene/bvh.h"
 #include "../scene/material.h"
 #include "../scene/ray.h"
 #include "../scene/scene.h"
@@ -33,7 +33,7 @@ class Trimesh : public SceneObject {
 public:
   Trimesh(Scene *scene, Material *mat, MatrixTransform transform)
       : SceneObject(scene, mat), displayListWithMaterials(0),
-        displayListWithoutMaterials(0) {
+        displayListWithoutMaterials(0), faceBvhDepth(-1), faceBvhLeafSize(-1) {
     this->transform = transform;
     vertNorms = false;
   }
@@ -72,11 +72,16 @@ public:
     return localbounds;
   }
 
+  void buildAcceleration(int maxDepth, int leafSize) override;
+
 protected:
   void glDrawLocal(int quality, bool actualMaterials,
                    bool actualTextures) const;
   mutable int displayListWithMaterials;
   mutable int displayListWithoutMaterials;
+  std::unique_ptr<BVH<TrimeshFace>> faceBvh;
+  int faceBvhDepth;
+  int faceBvhLeafSize;
 };
 
 /* A triangle in a mesh. This class looks and behaves a lot like other

@@ -55,6 +55,11 @@ const char *Trimesh::doubleCheck() {
 }
 
 bool Trimesh::intersectLocal(ray &r, isect &i) const {
+  if (traceUI != nullptr && traceUI->kdSwitch() && faceBvh &&
+      !faceBvh->empty()) {
+    return faceBvh->intersect(r, i);
+  }
+
   bool have_one = false;
   for (auto face : faces) {
     isect cur;
@@ -68,6 +73,33 @@ bool Trimesh::intersectLocal(ray &r, isect &i) const {
   if (!have_one)
     i.setT(1000.0);
   return have_one;
+}
+
+void Trimesh::buildAcceleration(int maxDepth, int leafSize) {
+  if (faces.empty()) {
+    faceBvh.reset();
+    faceBvhDepth = -1;
+    faceBvhLeafSize = -1;
+    return;
+  }
+
+  const int clampedDepth = std::max(1, maxDepth);
+  const int clampedLeafSize = std::max(1, leafSize);
+  if (faceBvh && faceBvhDepth == clampedDepth &&
+      faceBvhLeafSize == clampedLeafSize) {
+    return;
+  }
+
+  std::vector<TrimeshFace *> facePtrs;
+  facePtrs.reserve(faces.size());
+  for (TrimeshFace *face : faces) {
+    facePtrs.push_back(face);
+  }
+
+  faceBvh = std::make_unique<BVH<TrimeshFace>>(facePtrs, clampedDepth,
+                                               clampedLeafSize);
+  faceBvhDepth = clampedDepth;
+  faceBvhLeafSize = clampedLeafSize;
 }
 
 bool TrimeshFace::intersect(ray &r, isect &i) const {

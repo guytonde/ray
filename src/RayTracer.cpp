@@ -299,6 +299,7 @@ bool RayTracer::loadScene(const char *fn) {
   if (!sceneLoaded())
     return false;
 
+  scene->buildAcceleration(traceUI->getMaxDepth(), traceUI->getLeafSize());
   return true;
 }
 
@@ -318,6 +319,10 @@ void RayTracer::traceSetup(int w, int h) {
     thresh = traceUI->getThreshold();
     samples = traceUI->getSuperSamples();
     aaThresh = traceUI->getAaThreshold();
+
+    if (sceneLoaded()) {
+        scene->buildAcceleration(traceUI->getMaxDepth(), traceUI->getLeafSize());
+    }
     
     // Initialize threading
     stopTrace = false;
