@@ -5,5 +5,6 @@ __pycache__/
 *.pyo
 *.pyd
 raycheck.out
-assets/
+# assets/
+assets/scenes_og/
 scenes_all/
