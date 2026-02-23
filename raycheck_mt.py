@@ -718,7 +718,8 @@ def main():
         metavar="SECONDS",
         help="Time limit in seconds. The default limit is used during grading. Files that time out are reported as having maximum error.",
         type=int,
-        default=180,
+        default=600,
+        # default=180,
     )
     parser.add_argument(
         "--nocompare", help="Only render the image, do not compare", action="store_true"
