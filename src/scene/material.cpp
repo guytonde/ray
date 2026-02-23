@@ -30,10 +30,11 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   // View direction (from point to camera)
   glm::dvec3 view_dir = glm::normalize(-r.getDirection());
   glm::dvec3 shading_normal = normal;
-  if (r.type() == ray::REFRACTION && glm::dot(shading_normal, view_dir) < 0.0) {
+  const bool true_refraction_ior = index(i) > 1.0 + 1e-6;
+  if (r.type() == ray::REFRACTION && true_refraction_ior &&
+      glm::dot(shading_normal, view_dir) < 0.0) {
     shading_normal = -shading_normal;
   }
-
   // Start with emissive and ambient components
   glm::dvec3 color = ke_val + ka_val * scene->ambient();
 
@@ -41,9 +42,18 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   for (const auto &pLight : scene->getAllLights()) {
     glm::dvec3 light_dir = glm::normalize(pLight->getDirection(point));
     double atten = pLight->distanceAttenuation(point);
-    glm::dvec3 shadow_atten = traceUI->shadowSw()
-                                  ? pLight->shadowAttenuation(r, point)
-                                  : glm::dvec3(1.0, 1.0, 1.0);
+    glm::dvec3 shadow_atten(1.0, 1.0, 1.0);
+    const bool eta1_refraction_ray =
+        (r.type() == ray::REFRACTION) && Trans() &&
+        (std::abs(index(i) - 1.0) < 1e-6);
+    const bool both_refraction_ray =
+        (r.type() == ray::REFRACTION) && Both();
+    const bool matte_transparent_visibility =
+        (r.type() == ray::VISIBILITY) && Trans() && !Spec();
+    if (traceUI->shadowSw() && !eta1_refraction_ray && !both_refraction_ray &&
+        !matte_transparent_visibility) {
+      shadow_atten = pLight->shadowAttenuation(r, point, shading_normal);
+    }
 
     glm::dvec3 light_contribution = atten * shadow_atten * pLight->getColor();
 
@@ -52,7 +62,12 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
     const bool secondary_eta1_refraction =
         (r.type() == ray::REFRACTION) && Trans() &&
         (std::abs(index(i) - 1.0) < 1e-6);
-    const bool one_sided = primary_visibility || secondary_eta1_refraction;
+    const bool primary_transparent = primary_visibility && Trans();
+    const bool secondary_matte_refraction =
+        (r.type() == ray::REFRACTION) && Trans() && !Spec();
+    const bool one_sided = (!primary_transparent && primary_visibility) ||
+                           secondary_eta1_refraction ||
+                           secondary_matte_refraction;
     const double n_dot_l =
         one_sided ? glm::max(0.0, n_dot_l_raw) : std::abs(n_dot_l_raw);
     glm::dvec3 diffuse = kd_val * n_dot_l;

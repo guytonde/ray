@@ -104,14 +104,15 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         const glm::dvec3 incident = glm::normalize(r.getDirection());
         t = i.getT();
 
-        const double EPSILON = 1e-7;
+        const double REFLECT_EPSILON = 1e-4;
+        const double REFRACT_EPSILON = 1e-7;
         if (depth > 0) {
             if (m.Refl()) {
                 const glm::dvec3 kr_val = m.kr(i);
                 if (glm::length(kr_val) > 0.0) {
                     const glm::dvec3 reflect_dir =
                         glm::normalize(incident - 2.0 * glm::dot(incident, normal) * normal);
-                    ray reflect_ray(point + EPSILON * reflect_dir, reflect_dir,
+                    ray reflect_ray(point + REFLECT_EPSILON * reflect_dir, reflect_dir,
                                     glm::dvec3(1.0), ray::REFLECTION);
                     double dummy_t = 0.0;
                     colorC +=
@@ -156,7 +157,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                     }
 
                     if (has_refract) {
-                        ray refract_ray(point + EPSILON * refract_dir, refract_dir,
+                        ray refract_ray(point + REFRACT_EPSILON * refract_dir, refract_dir,
                                         glm::dvec3(1.0), ray::REFRACTION);
                         double dummy_t = 0.0;
                         colorC += traceRay(refract_ray, thresh, depth - 1, dummy_t);

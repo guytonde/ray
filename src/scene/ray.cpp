@@ -14,7 +14,8 @@ ray::ray(const glm::dvec3 &pp, const glm::dvec3 &dd, const glm::dvec3 &w,
   TraceUI::addRay(ray_thread_id);
 }
 
-ray::ray(const ray &other) : p(other.p), d(other.d), atten(other.atten) {
+ray::ray(const ray &other)
+    : p(other.p), d(other.d), atten(other.atten), t(other.t) {
   TraceUI::addRay(ray_thread_id);
 }
 

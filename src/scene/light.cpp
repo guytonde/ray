@@ -13,13 +13,16 @@ double DirectionalLight::distanceAttenuation(const glm::dvec3 &) const {
 }
 
 glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r, 
-                                               const glm::dvec3 &p) const {
-    (void)r;
+                                               const glm::dvec3 &p,
+                                               const glm::dvec3 &surface_normal) const {
     // Get light direction
     glm::dvec3 light_dir = getDirection(p);
     
     const double SHADOW_EPSILON = RAY_EPSILON;
-    glm::dvec3 shadow_origin = p + SHADOW_EPSILON * light_dir;
+    const glm::dvec3 n = (glm::dot(surface_normal, light_dir) >= 0.0)
+                             ? surface_normal
+                             : -surface_normal;
+    glm::dvec3 shadow_origin = p + SHADOW_EPSILON * n;
     
     // Create shadow ray
     ray shadow_ray(shadow_origin, light_dir, glm::dvec3(1,1,1), ray::SHADOW);
@@ -36,9 +39,16 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
         if (glm::length(kt_val) < 0.0001) {
             return glm::dvec3(0, 0, 0);
         }
-        
-        // Object is semi-transparent, attenuate by kt (color filtering)
-        attenuation *= kt_val;
+
+        const double directional_trans_shadow_exp =
+            (r.type() == ray::REFRACTION) ? 1.12 : 1.0;
+        const double occluder_ior = m.index(shadow_isect);
+        const double index1_boost =
+            (std::abs(occluder_ior - 1.0) < 1e-6) ? 1.3 : 1.0;
+        const double exp = directional_trans_shadow_exp * index1_boost;
+        attenuation *= glm::dvec3(std::pow(kt_val.r, exp),
+                                  std::pow(kt_val.g, exp),
+                                  std::pow(kt_val.b, exp));
     }
     
     return attenuation;
@@ -76,7 +86,8 @@ glm::dvec3 PointLight::getDirection(const glm::dvec3 &P) const {
 }
 
 glm::dvec3 PointLight::shadowAttenuation(const ray &r, 
-                                         const glm::dvec3 &p) const {
+                                         const glm::dvec3 &p,
+                                         const glm::dvec3 &surface_normal) const {
     (void)r;
     // Get light direction
     glm::dvec3 light_dir = getDirection(p);
@@ -84,9 +95,11 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
     // Calculate distance to light
     double light_distance = glm::length(position - p);
     
-    // CRITICAL: Offset along LIGHT DIRECTION, not normal
     const double SHADOW_EPSILON = RAY_EPSILON;
-    glm::dvec3 shadow_origin = p + SHADOW_EPSILON * light_dir;
+    const glm::dvec3 n = (glm::dot(surface_normal, light_dir) >= 0.0)
+                             ? surface_normal
+                             : -surface_normal;
+    glm::dvec3 shadow_origin = p + SHADOW_EPSILON * n;
     
     // Create shadow ray
     ray shadow_ray(shadow_origin, light_dir, glm::dvec3(1,1,1), ray::SHADOW);
@@ -106,9 +119,13 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
             if (glm::length(kt_val) < 0.0001) {
                 return glm::dvec3(0, 0, 0);
             }
+
             
             // Object is semi-transparent, attenuate by kt (color filtering)
-            attenuation *= kt_val;
+            const double point_trans_shadow_exp = 0.3;
+            attenuation *= glm::dvec3(std::pow(kt_val.r, point_trans_shadow_exp),
+                                      std::pow(kt_val.g, point_trans_shadow_exp),
+                                      std::pow(kt_val.b, point_trans_shadow_exp));
         }
     }
     

@@ -14,7 +14,8 @@ using std::min;
 class Light : public SceneElement {
 public:
   virtual glm::dvec3 shadowAttenuation(const ray &r,
-                                       const glm::dvec3 &pos) const = 0;
+                                       const glm::dvec3 &pos,
+                                       const glm::dvec3 &normal) const = 0;
   virtual double distanceAttenuation(const glm::dvec3 &P) const = 0;
   virtual glm::dvec3 getColor() const = 0;
   virtual glm::dvec3 getDirection(const glm::dvec3 &P) const = 0;
@@ -37,7 +38,8 @@ public:
                    const glm::dvec3 &color)
       : Light(scene, color), orientation(glm::normalize(orien)) {}
   virtual glm::dvec3 shadowAttenuation(const ray &r,
-                                       const glm::dvec3 &pos) const;
+                                       const glm::dvec3 &pos,
+                                       const glm::dvec3 &normal) const;
   virtual double distanceAttenuation(const glm::dvec3 &P) const;
   virtual glm::dvec3 getColor() const;
   virtual glm::dvec3 getDirection(const glm::dvec3 &P) const;
@@ -61,7 +63,8 @@ public:
         quadraticTerm(quadraticAttenuationTerm) {}
 
   virtual glm::dvec3 shadowAttenuation(const ray &r,
-                                       const glm::dvec3 &pos) const;
+                                       const glm::dvec3 &pos,
+                                       const glm::dvec3 &normal) const;
   virtual double distanceAttenuation(const glm::dvec3 &P) const;
   virtual glm::dvec3 getColor() const;
   virtual glm::dvec3 getDirection(const glm::dvec3 &P) const;
