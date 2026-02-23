@@ -14,6 +14,7 @@ double DirectionalLight::distanceAttenuation(const glm::dvec3 &) const {
 
 glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r, 
                                                const glm::dvec3 &p) const {
+    (void)r;
     // Get light direction
     glm::dvec3 light_dir = getDirection(p);
     
@@ -76,6 +77,7 @@ glm::dvec3 PointLight::getDirection(const glm::dvec3 &P) const {
 
 glm::dvec3 PointLight::shadowAttenuation(const ray &r, 
                                          const glm::dvec3 &p) const {
+    (void)r;
     // Get light direction
     glm::dvec3 light_dir = getDirection(p);
     
@@ -114,4 +116,3 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
 }
 
 #define VERBOSE 0
-

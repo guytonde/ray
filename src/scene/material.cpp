@@ -16,62 +16,63 @@ Material::~Material() {}
 // Apply the phong model to this point on the surface of the object, returning
 // the color of that point.
 glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
-    // Get material properties at this intersection point
-    glm::dvec3 ke_val = ke(i);  // Emissive
-    glm::dvec3 ka_val = ka(i);  // Ambient
-    glm::dvec3 kd_val = kd(i);  // Diffuse
-    glm::dvec3 ks_val = ks(i);  // Specular
-    double shininess_val = shininess(i);
-    
-    // Get intersection point and normal
-    glm::dvec3 point = r.at(i.getT());
-    glm::dvec3 normal = i.getN();
-    
-    // View direction (from point to camera)
-    glm::dvec3 view_dir = glm::normalize(-r.getDirection());
-    
-    // Start with emissive and ambient components
-    glm::dvec3 color = ke_val + ka_val * scene->ambient();
-    
-    // Iterate through all lights
-    for (const auto& pLight : scene->getAllLights()) {
-        // Get light direction
-        glm::dvec3 light_dir = pLight->getDirection(point);
-        
-        // Compute distance attenuation
-        double atten = pLight->distanceAttenuation(point);
-        
-        // Compute shadow attenuation
-        glm::dvec3 shadow_atten = pLight->shadowAttenuation(r, point);
-        
-        // Combined attenuation
-        glm::dvec3 light_contribution = atten * shadow_atten * pLight->getColor();
-        
-        // Diffuse component (Lambertian)
-        // Use abs instead of max for two-sided lighting
-        double n_dot_l = std::abs(glm::dot(normal, light_dir));
-        glm::dvec3 diffuse = kd_val * n_dot_l;
-        
-        // Specular component (Phong)
-        glm::dvec3 specular(0.0, 0.0, 0.0);
-        if (n_dot_l > 0.0) {
-            // Reflection vector: R = 2(N·L)N - L
-            glm::dvec3 reflect_dir = glm::normalize(2.0 * n_dot_l * normal - light_dir);
-            
-            // R·V for specular
-            double r_dot_v = glm::max(0.0, glm::dot(reflect_dir, view_dir));
-            
-            // Phong specular: ks * (R·V)^shininess
-            if (r_dot_v > 0.0 && shininess_val > 0.0) {
-                specular = ks_val * pow(r_dot_v, shininess_val);
-            }
-        }
-        
-        // Add this light's contribution
-        color += light_contribution * (diffuse + specular);
+  // Get material properties at this intersection point
+  glm::dvec3 ke_val = ke(i); // Emissive
+  glm::dvec3 ka_val = ka(i); // Ambient
+  glm::dvec3 kd_val = kd(i); // Diffuse
+  glm::dvec3 ks_val = ks(i); // Specular
+  double shininess_val = shininess(i);
+
+  // Get intersection point and normal
+  glm::dvec3 point = r.at(i.getT());
+  glm::dvec3 normal = glm::normalize(i.getN());
+
+  // View direction (from point to camera)
+  glm::dvec3 view_dir = glm::normalize(-r.getDirection());
+
+  // Start with emissive and ambient components
+  glm::dvec3 color = ke_val + ka_val * scene->ambient();
+
+  // Iterate through all lights
+  for (const auto &pLight : scene->getAllLights()) {
+    glm::dvec3 light_dir = glm::normalize(pLight->getDirection(point));
+    double atten = pLight->distanceAttenuation(point);
+    glm::dvec3 shadow_atten = traceUI->shadowSw()
+                                  ? pLight->shadowAttenuation(r, point)
+                                  : glm::dvec3(1.0, 1.0, 1.0);
+
+    glm::dvec3 light_contribution = atten * shadow_atten * pLight->getColor();
+
+    const double n_dot_l_raw = glm::dot(normal, light_dir);
+    const bool primary_visibility = (r.type() == ray::VISIBILITY);
+    const bool one_sided = primary_visibility;
+    const double n_dot_l =
+        one_sided ? glm::max(0.0, n_dot_l_raw) : std::abs(n_dot_l_raw);
+    glm::dvec3 diffuse = kd_val * n_dot_l;
+
+    glm::dvec3 specular(0.0, 0.0, 0.0);
+    const bool allow_backface_spec = traceUI->backfaceSpecular();
+    const bool do_specular =
+        shininess_val > 0.0 &&
+        (one_sided ? (n_dot_l_raw > 0.0)
+                    : (n_dot_l_raw > 0.0 || allow_backface_spec));
+    if (do_specular) {
+      const double spec_n_dot_l =
+          one_sided
+              ? n_dot_l_raw
+              : (allow_backface_spec ? std::abs(n_dot_l_raw) : n_dot_l_raw);
+      glm::dvec3 reflect_dir =
+          glm::normalize((2.0 * spec_n_dot_l * normal) - light_dir);
+      double r_dot_v = glm::max(0.0, glm::dot(reflect_dir, view_dir));
+      if (r_dot_v > 0.0) {
+        specular = ks_val * pow(r_dot_v, shininess_val);
+      }
     }
-    
-    return color;
+
+    color += light_contribution * (diffuse + specular);
+  }
+
+  return color;
 
 
   // For now, this method just returns the diffuse color of the object.

@@ -104,7 +104,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         t = i.getT();
         
         // Small epsilon to prevent self-intersection
-        const double EPSILON = 1e-6;
+        const double EPSILON = 1e-4;
         
         // Only recurse if we haven't exceeded depth limit
         if (depth > 0) {
@@ -138,40 +138,27 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                 
                 // Check if contribution is significant
                 if (glm::length(kt_val) > 0.0) {
-                    // Determine if we're entering or exiting the object
-                    // If ray and normal point in opposite directions, we're entering
                     glm::dvec3 incident = glm::normalize(r.getDirection());
-                    double cos_i = glm::dot(incident, normal);
-                    bool entering = cos_i < 0;
-                    
-                    // Indices of refraction
-                    double n1 = entering ? 1.0 : m.index(i);  // From air or from material
-                    double n2 = entering ? m.index(i) : 1.0;  // To material or to air
+                    glm::dvec3 n = normal;
+                    double cos_i = glm::dot(incident, n);
+                    bool entering = cos_i < 0.0;
+                    double n1 = entering ? 1.0 : m.index(i);
+                    double n2 = entering ? m.index(i) : 1.0;
+                    if (!entering) {
+                        n = -n;
+                    }
+
                     double eta = n1 / n2;
-                    
-                    // For refraction calculation, ensure cos_i is positive
-                    double cos_i_abs = std::abs(cos_i);
-                    
-                    // Compute sin²(theta_t) using Snell's law
-                    double sin_t2 = eta * eta * (1.0 - cos_i_abs * cos_i_abs);
+                    double cos_theta_i = -glm::dot(incident, n);
+                    double sin_t2 = eta * eta * (1.0 - cos_theta_i * cos_theta_i);
                     
                     // Check for total internal reflection
                     if (sin_t2 <= 1.0) {
                         double cos_t = std::sqrt(1.0 - sin_t2);
                         
-                        // Compute refracted direction
-                        // If entering: refract into material (same hemisphere as -normal)
-                        // If exiting: refract into air (same hemisphere as normal)
-                        glm::dvec3 refract_dir;
-                        if (entering) {
-                            refract_dir = glm::normalize(
-                                eta * incident + (eta * cos_i_abs - cos_t) * normal
-                            );
-                        } else {
-                            refract_dir = glm::normalize(
-                                eta * incident - (eta * cos_i_abs - cos_t) * normal
-                            );
-                        }
+                        glm::dvec3 refract_dir = glm::normalize(
+                            eta * incident + (eta * cos_theta_i - cos_t) * n
+                        );
                         
                         // Create refraction ray with offset to prevent self-intersection
                         glm::dvec3 refract_origin = point + EPSILON * refract_dir;
@@ -181,8 +168,8 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                         // Recursively trace refraction
                         glm::dvec3 refract_color = traceRay(refract_ray, thresh, depth - 1, dummy_t);
                         
-                        // Add refraction contribution
-                        colorC += kt_val * refract_color;
+                        // Transmission contribution.
+                        colorC += refract_color;
                     }
                     // If total internal reflection occurs, only reflection contributes
                     // (already handled above if Refl() is true)
@@ -364,7 +351,13 @@ int RayTracer::aaImage() {
         return 0;
     
     int pixels_aa = 0;
-    int sqrt_samples = (int)sqrt(samples);
+    int samples_per_dim = samples;
+    const int sqrt_samples = (int)std::sqrt(samples);
+    if (sqrt_samples * sqrt_samples == samples) {
+        // Accept legacy "total samples" values like 1, 4, 9, 16.
+        samples_per_dim = sqrt_samples;
+    }
+    const int total_samples = samples_per_dim * samples_per_dim;
     
     for (int j = 0; j < buffer_height; ++j) {
         for (int i = 0; i < buffer_width; ++i) {
@@ -391,17 +384,17 @@ int RayTracer::aaImage() {
             // If edge detected, apply supersampling
             if (needs_aa) {
                 glm::dvec3 col(0, 0, 0);
-                double sample_offset = 1.0 / sqrt_samples;
+                double sample_offset = 1.0 / samples_per_dim;
                 
-                for (int si = 0; si < sqrt_samples; ++si) {
-                    for (int sj = 0; sj < sqrt_samples; ++sj) {
+                for (int si = 0; si < samples_per_dim; ++si) {
+                    for (int sj = 0; sj < samples_per_dim; ++sj) {
                         double x = (double(i) + (si + 0.5) * sample_offset) / double(buffer_width);
                         double y = (double(j) + (sj + 0.5) * sample_offset) / double(buffer_height);
                         col += trace(x, y);
                     }
                 }
                 
-                col /= double(samples);
+                col /= double(total_samples);
                 setPixel(i, j, col);
                 pixels_aa++;
             }

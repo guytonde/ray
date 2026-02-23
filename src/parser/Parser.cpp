@@ -15,7 +15,6 @@
 #include <glm/mat4x4.hpp>
 
 extern TraceUI *traceUI;
-extern TraceUI *traceUI;
 
 using namespace std;
 

@@ -6,7 +6,6 @@
 #include <string.h>
 #include "../ui/TraceUI.h"
 extern TraceUI *traceUI;
-extern TraceUI *traceUI;
 
 using namespace std;
 
@@ -93,8 +92,7 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     glm::dvec3 h = glm::cross(r.getDirection(), edge2);
     double det = glm::dot(edge1, h);
     
-    // If determinant is near zero, ray lies in plane of triangle
-    // const double EPSILON = 0.0000001;
+    // If determinant is near zero, ray lies in plane of triangle.
     if (det > -RAY_EPSILON && det < RAY_EPSILON)
         return false;
     
@@ -125,6 +123,7 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
         double alpha = 1.0 - u - v;
         double beta = u;
         double gamma = v;
+        i.setBary(alpha, beta, gamma);
         
         // Interpolate normal if parent mesh has per-vertex normals
         if (!parent->normals.empty()) {
@@ -133,7 +132,11 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
             const glm::dvec3& nc = parent->normals[ids[2]];
             
             glm::dvec3 interpolated_normal = alpha * na + beta * nb + gamma * nc;
-            i.setN(glm::normalize(interpolated_normal));
+            if (glm::length(interpolated_normal) > RAY_EPSILON) {
+                i.setN(glm::normalize(interpolated_normal));
+            } else {
+                i.setN(normal);
+            }
         } else {
             // Use face normal
             i.setN(normal);
@@ -148,18 +151,18 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
             glm::dvec2 interpolated_uv = alpha * uva + beta * uvb + gamma * uvc;
             i.setUVCoordinates(interpolated_uv);
         }
-        // Handle vertex colors if present (and UV coords not present)
-        else if (!parent->vertColors.empty()) {
+        // Handle vertex colors if present
+        if (!parent->vertColors.empty()) {
             const glm::dvec3& ca = parent->vertColors[ids[0]];
             const glm::dvec3& cb = parent->vertColors[ids[1]];
             const glm::dvec3& cc = parent->vertColors[ids[2]];
             
             glm::dvec3 interpolated_color = alpha * ca + beta * cb + gamma * cc;
             
-            // Create a new material with the interpolated color
-            Material* new_mat = new Material(parent->getMaterial());
-            new_mat->setDiffuse(interpolated_color);
-            i.setMaterial(*new_mat);
+            // Interpolate per-vertex material as diffuse color.
+            Material interpolated_material(parent->getMaterial());
+            interpolated_material.setDiffuse(interpolated_color);
+            i.setMaterial(interpolated_material);
         }
         
         return true;
@@ -192,4 +195,3 @@ void Trimesh::generateNormals() {
 
   vertNorms = true;
 }
-

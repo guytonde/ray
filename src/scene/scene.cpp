@@ -29,7 +29,7 @@ bool Geometry::intersect(ray &r, isect &i) const {
   if (intersectLocal(r, i)) {
     // Transform the intersection point & normal returned back into
     // global space.
-    i.setN(transform.localToGlobalCoordsNormal(i.getN()));
+    i.setN(glm::normalize(transform.localToGlobalCoordsNormal(i.getN())));
     i.setT(i.getT() / length);
     rtrn = true;
   }
