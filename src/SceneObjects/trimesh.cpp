@@ -124,9 +124,17 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     glm::dvec3 h = glm::cross(r.getDirection(), edge2);
     double det = glm::dot(edge1, h);
     
-    // If determinant is near zero, ray lies in plane of triangle.
-    if (det > -RAY_EPSILON && det < RAY_EPSILON)
-        return false;
+    const bool cull_backfaces = false;
+    if (cull_backfaces) {
+        if (det < RAY_EPSILON) {
+            return false;
+        }
+    } else {
+        // If determinant is near zero, ray lies in plane of triangle.
+        if (det > -RAY_EPSILON && det < RAY_EPSILON) {
+            return false;
+        }
+    }
     
     double inv_det = 1.0 / det;
     glm::dvec3 s = r.getPosition() - a;

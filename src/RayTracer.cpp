@@ -50,7 +50,7 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
     int sqrt_samples = (int)sqrt(samples);
     
     if (sqrt_samples <= 1) {
-        // No anti-aliasing - single sample at pixel center
+        // No anti-aliasing - single sample
         double x = double(i) / double(buffer_width);
         double y = double(j) / double(buffer_height);
         col = trace(x, y);
@@ -72,6 +72,8 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
         col /= double(samples);
     }
 
+    col = glm::clamp(col, 0.0, 1.0);
+
     unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
     pixel[0] = (int)(255.0 * col[0]);
     pixel[1] = (int)(255.0 * col[1]);
@@ -90,89 +92,71 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 #endif
     
     if (scene->intersect(r, i)) {
-        // Get material properties
         const Material &m = i.getMaterial();
-        
-        // Base shading from Phong model
         colorC = m.shade(scene.get(), r, i);
-        
-        // Get intersection point and normal
-        glm::dvec3 point = r.at(i.getT());
-        glm::dvec3 normal = i.getN();
-        
-        // Store intersection distance
+
+        const glm::dvec3 point = r.at(i.getT());
+        const glm::dvec3 normal = glm::normalize(i.getN());
+        const glm::dvec3 incident = glm::normalize(r.getDirection());
         t = i.getT();
-        
-        // Small epsilon to prevent self-intersection
+
         const double EPSILON = 1e-4;
-        
-        // Only recurse if we haven't exceeded depth limit
         if (depth > 0) {
-            // Handle reflection
             if (m.Refl()) {
-                glm::dvec3 kr_val = m.kr(i);
-                
-                // Check if contribution is significant
+                const glm::dvec3 kr_val = m.kr(i);
                 if (glm::length(kr_val) > 0.0) {
-                    // Compute reflection direction: R = D - 2(D·N)N
-                    glm::dvec3 reflect_dir = glm::normalize(
-                        r.getDirection() - 2.0 * glm::dot(r.getDirection(), normal) * normal
-                    );
-                    
-                    // Create reflection ray with offset to prevent self-intersection
-                    glm::dvec3 reflect_origin = point + EPSILON * reflect_dir;
-                    ray reflect_ray(reflect_origin, reflect_dir, glm::dvec3(1,1,1), ray::REFLECTION);
-                    double dummy_t;
-                    
-                    // Recursively trace reflection
-                    glm::dvec3 reflect_color = traceRay(reflect_ray, thresh, depth - 1, dummy_t);
-                    
-                    // Add reflection contribution
-                    colorC += kr_val * reflect_color;
+                    const glm::dvec3 reflect_dir =
+                        glm::normalize(incident - 2.0 * glm::dot(incident, normal) * normal);
+                    ray reflect_ray(point + EPSILON * reflect_dir, reflect_dir,
+                                    glm::dvec3(1.0), ray::REFLECTION);
+                    double dummy_t = 0.0;
+                    colorC +=
+                        kr_val * traceRay(reflect_ray, thresh, depth - 1, dummy_t);
                 }
             }
-            
-            // Handle refraction (transmission)
+
             if (m.Trans()) {
-                glm::dvec3 kt_val = m.kt(i);
-                
-                // Check if contribution is significant
+                const glm::dvec3 kt_val = m.kt(i);
                 if (glm::length(kt_val) > 0.0) {
-                    glm::dvec3 incident = glm::normalize(r.getDirection());
                     glm::dvec3 n = normal;
-                    double cos_i = glm::dot(incident, n);
-                    bool entering = cos_i < 0.0;
-                    double n1 = entering ? 1.0 : m.index(i);
-                    double n2 = entering ? m.index(i) : 1.0;
-                    if (!entering) {
-                        n = -n;
+                    double n1 = 1.0;
+                    double n2 = m.index(i);
+                    if (n2 <= 0.0) {
+                        n2 = 1.0;
                     }
 
-                    double eta = n1 / n2;
-                    double cos_theta_i = -glm::dot(incident, n);
-                    double sin_t2 = eta * eta * (1.0 - cos_theta_i * cos_theta_i);
-                    
-                    // Check for total internal reflection
-                    if (sin_t2 <= 1.0) {
-                        double cos_t = std::sqrt(1.0 - sin_t2);
-                        
-                        glm::dvec3 refract_dir = glm::normalize(
-                            eta * incident + (eta * cos_theta_i - cos_t) * n
-                        );
-                        
-                        // Create refraction ray with offset to prevent self-intersection
-                        glm::dvec3 refract_origin = point + EPSILON * refract_dir;
-                        ray refract_ray(refract_origin, refract_dir, glm::dvec3(1,1,1), ray::REFRACTION);
-                        double dummy_t;
-                        
-                        // Recursively trace refraction
-                        glm::dvec3 refract_color = traceRay(refract_ray, thresh, depth - 1, dummy_t);
-                        
-                        // Transmission contribution.
-                        colorC += refract_color;
+                    double d_dot_n = glm::dot(incident, n);
+                    if (d_dot_n > 0.0) {
+                        n = -n;
+                        n1 = n2;
+                        n2 = 1.0;
+                        d_dot_n = glm::dot(incident, n);
                     }
-                    // If total internal reflection occurs, only reflection contributes
-                    // (already handled above if Refl() is true)
+
+                    glm::dvec3 refract_dir(incident);
+                    bool has_refract = true;
+
+                    if (std::abs(n1 - n2) > 1e-9) {
+                        const double eta = n1 / n2;
+                        const double cos_theta_i = -d_dot_n;
+                        const double sin_t2 =
+                            eta * eta * (1.0 - cos_theta_i * cos_theta_i);
+                        if (sin_t2 <= 1.0) {
+                            const double cos_t =
+                                std::sqrt(std::max(0.0, 1.0 - sin_t2));
+                            refract_dir = glm::normalize(
+                                eta * incident + (eta * cos_theta_i - cos_t) * n);
+                        } else {
+                            has_refract = false;
+                        }
+                    }
+
+                    if (has_refract) {
+                        ray refract_ray(point - EPSILON * n, refract_dir,
+                                        glm::dvec3(1.0), ray::REFRACTION);
+                        double dummy_t = 0.0;
+                        colorC += traceRay(refract_ray, thresh, depth - 1, dummy_t);
+                    }
                 }
             }
         }
@@ -190,7 +174,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
               << std::endl;
 #endif
-    return colorC;
+    return glm::clamp(colorC, 0.0, 1.0);
 }
 
 // Anti-aliasing by supersampling

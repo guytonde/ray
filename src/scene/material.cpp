@@ -45,7 +45,10 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
     const double n_dot_l_raw = glm::dot(normal, light_dir);
     const bool primary_visibility = (r.type() == ray::VISIBILITY);
-    const bool one_sided = primary_visibility;
+    const bool secondary_eta1_refraction =
+        (r.type() == ray::REFRACTION) && Trans() &&
+        (std::abs(index(i) - 1.0) < 1e-6);
+    const bool one_sided = primary_visibility || secondary_eta1_refraction;
     const double n_dot_l =
         one_sided ? glm::max(0.0, n_dot_l_raw) : std::abs(n_dot_l_raw);
     glm::dvec3 diffuse = kd_val * n_dot_l;
@@ -73,33 +76,6 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
   }
 
   return color;
-
-
-  // For now, this method just returns the diffuse color of the object.
-  // This gives a single matte color for every distinct surface in the
-  // scene, and that's it.  Simple, but enough to get you started.
-  // (It's also inconsistent with the phong model...)
-
-  // Your mission is to fill in this method with the rest of the phong
-  // shading model, including the contributions of all the light sources.
-  // You will need to call both distanceAttenuation() and
-  // shadowAttenuation()
-  // somewhere in your code in order to compute shadows and light falloff.
-  //	if( debugMode )
-  //		std::cout << "Debugging Phong code..." << std::endl;
-
-  // When you're iterating through the lights,
-  // you'll want to use code that looks something
-  // like this:
-  //
-  // for ( const auto& pLight : scene->getAllLights() )
-  // {
-  //              // pLight has type Light*
-  // 		.
-  // 		.
-  // 		.
-  // }
-  // return kd(i);
 }
 
 TextureMap::TextureMap(string filename) {
