@@ -111,6 +111,7 @@ bool TrimeshFace::intersect(ray &r, isect &i) const {
 // and put the parameter in t and the barycentric coordinates of the
 // intersection in u (alpha) and v (beta).
 bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
+    const double TRI_EPSILON = 1e-12;
     // Get vertices of the triangle
     const glm::dvec3& a = parent->vertices[ids[0]];
     const glm::dvec3& b = parent->vertices[ids[1]];
@@ -126,12 +127,12 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     
     const bool cull_backfaces = false;
     if (cull_backfaces) {
-        if (det < RAY_EPSILON) {
+        if (det < TRI_EPSILON) {
             return false;
         }
     } else {
         // If determinant is near zero, ray lies in plane of triangle.
-        if (det > -RAY_EPSILON && det < RAY_EPSILON) {
+        if (det > -TRI_EPSILON && det < TRI_EPSILON) {
             return false;
         }
     }
@@ -155,7 +156,7 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     double t = inv_det * glm::dot(edge2, q);
     
     // Ray intersection
-    if (t > RAY_EPSILON) {
+    if (t > TRI_EPSILON) {
         i.setT(t);
         i.setObject(this->parent);
         
@@ -172,7 +173,7 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
             const glm::dvec3& nc = parent->normals[ids[2]];
             
             glm::dvec3 interpolated_normal = alpha * na + beta * nb + gamma * nc;
-            if (glm::length(interpolated_normal) > RAY_EPSILON) {
+            if (glm::length(interpolated_normal) > TRI_EPSILON) {
                 i.setN(glm::normalize(interpolated_normal));
             } else {
                 i.setN(normal);

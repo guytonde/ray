@@ -29,6 +29,10 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
   // View direction (from point to camera)
   glm::dvec3 view_dir = glm::normalize(-r.getDirection());
+  glm::dvec3 shading_normal = normal;
+  if (r.type() == ray::REFRACTION && glm::dot(shading_normal, view_dir) < 0.0) {
+    shading_normal = -shading_normal;
+  }
 
   // Start with emissive and ambient components
   glm::dvec3 color = ke_val + ka_val * scene->ambient();
@@ -43,7 +47,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
 
     glm::dvec3 light_contribution = atten * shadow_atten * pLight->getColor();
 
-    const double n_dot_l_raw = glm::dot(normal, light_dir);
+    const double n_dot_l_raw = glm::dot(shading_normal, light_dir);
     const bool primary_visibility = (r.type() == ray::VISIBILITY);
     const bool secondary_eta1_refraction =
         (r.type() == ray::REFRACTION) && Trans() &&
@@ -65,7 +69,7 @@ glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
               ? n_dot_l_raw
               : (allow_backface_spec ? std::abs(n_dot_l_raw) : n_dot_l_raw);
       glm::dvec3 reflect_dir =
-          glm::normalize((2.0 * spec_n_dot_l * normal) - light_dir);
+          glm::normalize((2.0 * spec_n_dot_l * shading_normal) - light_dir);
       double r_dot_v = glm::max(0.0, glm::dot(reflect_dir, view_dir));
       if (r_dot_v > 0.0) {
         specular = ks_val * pow(r_dot_v, shininess_val);

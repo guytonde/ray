@@ -87,12 +87,16 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                                double &t) {
     isect i;
     glm::dvec3 colorC;
+    bool clamp_output = true;
 #if VERBOSE
     std::cerr << "== current depth: " << depth << std::endl;
 #endif
     
     if (scene->intersect(r, i)) {
         const Material &m = i.getMaterial();
+        if (m.Both() && r.type() != ray::VISIBILITY) {
+            clamp_output = false;
+        }
         colorC = m.shade(scene.get(), r, i);
 
         const glm::dvec3 point = r.at(i.getT());
@@ -100,7 +104,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         const glm::dvec3 incident = glm::normalize(r.getDirection());
         t = i.getT();
 
-        const double EPSILON = 1e-4;
+        const double EPSILON = 1e-7;
         if (depth > 0) {
             if (m.Refl()) {
                 const glm::dvec3 kr_val = m.kr(i);
@@ -141,7 +145,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                         const double cos_theta_i = -d_dot_n;
                         const double sin_t2 =
                             eta * eta * (1.0 - cos_theta_i * cos_theta_i);
-                        if (sin_t2 <= 1.0) {
+                        if (sin_t2 <= 1.0 + 1e-6) {
                             const double cos_t =
                                 std::sqrt(std::max(0.0, 1.0 - sin_t2));
                             refract_dir = glm::normalize(
@@ -152,7 +156,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                     }
 
                     if (has_refract) {
-                        ray refract_ray(point - EPSILON * n, refract_dir,
+                        ray refract_ray(point + EPSILON * refract_dir, refract_dir,
                                         glm::dvec3(1.0), ray::REFRACTION);
                         double dummy_t = 0.0;
                         colorC += traceRay(refract_ray, thresh, depth - 1, dummy_t);
@@ -174,7 +178,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
               << std::endl;
 #endif
-    return glm::clamp(colorC, 0.0, 1.0);
+    return clamp_output ? glm::clamp(colorC, 0.0, 1.0) : colorC;
 }
 
 // Anti-aliasing by supersampling
