@@ -110,7 +110,6 @@ TextureMap::TextureMap(string filename) {
 }
 
 glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
-  // YOUR CODE HERE
   if (width <= 0 || height <= 0 || data.empty()) return glm::dvec3(0.0);
 
   // Clamp UV to [0,1]
@@ -137,20 +136,9 @@ glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
   const glm::dvec3 c0 = (1.0 - tx) * c00 + tx * c10;
   const glm::dvec3 c1 = (1.0 - tx) * c01 + tx * c11;
   return (1.0 - ty) * c0 + ty * c1;
-  //
-  // In order to add texture mapping support to the
-  // raytracer, you need to implement this function.
-  // What this function should do is convert from
-  // parametric space which is the unit square
-  // [0, 1] x [0, 1] in 2-space to bitmap coordinates,
-  // and use these to perform bilinear interpolation
-  // of the values.
-
-  // return glm::dvec3(1, 1, 1);
 }
 
 glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
-  // YOUR CODE HERE
   if (width <= 0 || height <= 0 || data.empty()) return glm::dvec3(0.0);
 
   x = std::clamp(x, 0, width - 1);
@@ -162,11 +150,6 @@ glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
   const double b = data[idx + 2] / 255.0;
 
   return glm::dvec3(r, g, b);
-  //
-  // In order to add texture mapping support to the
-  // raytracer, you need to implement this function.
-
-  // return glm::dvec3(1, 1, 1);
 }
 
 glm::dvec3 MaterialParameter::value(const isect &is) const {

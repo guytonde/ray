@@ -8,9 +8,7 @@
 extern TraceUI *traceUI;
 
 glm::dvec3 CubeMap::getColor(ray r) const {
-  // YOUR CODE HERE
-  // FIXME: Implement Cube Map here
-    glm::dvec3 d = glm::normalize(r.getDirection());
+  glm::dvec3 d = glm::normalize(r.getDirection());
 
   const double ax = std::abs(d.x);
   const double ay = std::abs(d.y);
@@ -25,12 +23,12 @@ glm::dvec3 CubeMap::getColor(ray r) const {
     ma = ax;
     if (d.x > 0) { // +X (index 0)
       face = 0;
-      u = (-d.z / ma + 1.0) * 0.5;
-      v = (-d.y / ma + 1.0) * 0.5;
+      u = (d.z / ma + 1.0) * 0.5;
+      v = (d.y / ma + 1.0) * 0.5;
     } else {       // -X (index 1)
       face = 1;
-      u = ( d.z / ma + 1.0) * 0.5;
-      v = (-d.y / ma + 1.0) * 0.5;
+      u = (-d.z / ma + 1.0) * 0.5;
+      v = (d.y / ma + 1.0) * 0.5;
     }
   } else if (ay >= ax && ay >= az) {
     ma = ay;
@@ -45,21 +43,19 @@ glm::dvec3 CubeMap::getColor(ray r) const {
     }
   } else {
     ma = az;
-    if (d.z > 0) { // +Z (index 4)
-      face = 4;
-      u = ( d.x / ma + 1.0) * 0.5;
-      v = (-d.y / ma + 1.0) * 0.5;
-    } else {       // -Z (index 5)
+    if (d.z > 0) { // +Z direction samples -Z image (index 5)
       face = 5;
       u = (-d.x / ma + 1.0) * 0.5;
-      v = (-d.y / ma + 1.0) * 0.5;
+      v = ( d.y / ma + 1.0) * 0.5;
+    } else {       // -Z direction samples +Z image (index 4)
+      face = 4;
+      u = ( d.x / ma + 1.0) * 0.5;
+      v = ( d.y / ma + 1.0) * 0.5;
     }
   }
 
   if (!tMap[face]) return glm::dvec3(0.0);
 
-  // Optional box filter using TraceUI's filter width slider (1..17)
-  // If you don’t care about filtering, you can just return getMappedValue(u,v).
   const int fw = std::max(1, traceUI ? traceUI->getFilterWidth() : 1);
   if (fw == 1) {
     return tMap[face]->getMappedValue(glm::dvec2(u, v));
@@ -85,7 +81,6 @@ glm::dvec3 CubeMap::getColor(ray r) const {
   }
 
   return sum / double(count);
-  // return glm::dvec3();
 }
 
 CubeMap::CubeMap() {}

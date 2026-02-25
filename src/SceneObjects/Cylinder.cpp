@@ -5,7 +5,6 @@
 using namespace std;
 
 bool Cylinder::intersectLocal(ray &r, isect &i) const {
-  // FIXME: check these suspicious initialization.
   i.setObject(this);
   i.setMaterial(this->getMaterial());
 
