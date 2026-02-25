@@ -21,29 +21,16 @@ glm::dvec3 DirectionalLight::shadowAttenuation(const ray &r,
       (glm::dot(surface_normal, light_dir) >= 0.0) ? surface_normal : -surface_normal;
   const double eps = RAY_EPSILON;
 
-  glm::dvec3 attenuation(1.0);
-  glm::dvec3 origin = p + eps * n;
-
-  for (int steps = 0; steps < 64; ++steps) {
-    ray shadow_ray(origin, light_dir, glm::dvec3(1.0), ray::SHADOW);
-    isect hit;
-    if (!getScene()->intersect(shadow_ray, hit)) {
-      break;
-    }
-
-    const glm::dvec3 kt = glm::clamp(hit.getMaterial().kt(hit), 0.0, 1.0);
-    if (glm::length(kt) <= 1e-8) {
-      return glm::dvec3(0.0);
-    }
-    attenuation *= kt;
-    if (glm::length(attenuation) <= 1e-8) {
-      return glm::dvec3(0.0);
-    }
-
-    origin = shadow_ray.at(hit.getT()) + eps * light_dir;
+  ray shadow_ray(p + eps * n, light_dir, glm::dvec3(1.0), ray::SHADOW);
+  isect hit;
+  if (!getScene()->intersect(shadow_ray, hit)) {
+    return glm::dvec3(1.0);
   }
-
-  return attenuation;
+  const glm::dvec3 kt = glm::clamp(hit.getMaterial().kt(hit), 0.0, 1.0);
+  if (glm::length(kt) <= 1e-8) {
+    return glm::dvec3(0.0);
+  }
+  return kt;
 }
 
 glm::dvec3 DirectionalLight::getColor() const { return color; }
@@ -84,34 +71,16 @@ glm::dvec3 PointLight::shadowAttenuation(const ray &r,
       (glm::dot(surface_normal, light_dir) >= 0.0) ? surface_normal : -surface_normal;
   const double eps = RAY_EPSILON;
 
-  glm::dvec3 attenuation(1.0);
-  glm::dvec3 origin = p + eps * n;
-  double remaining = light_distance - eps;
-
-  for (int steps = 0; steps < 64 && remaining > eps; ++steps) {
-    ray shadow_ray(origin, light_dir, glm::dvec3(1.0), ray::SHADOW);
-    isect hit;
-    if (!getScene()->intersect(shadow_ray, hit)) {
-      break;
-    }
-    if (hit.getT() >= remaining) {
-      break;
-    }
-
-    const glm::dvec3 kt = glm::clamp(hit.getMaterial().kt(hit), 0.0, 1.0);
-    if (glm::length(kt) <= 1e-8) {
-      return glm::dvec3(0.0);
-    }
-    attenuation *= kt;
-    if (glm::length(attenuation) <= 1e-8) {
-      return glm::dvec3(0.0);
-    }
-
-    origin = shadow_ray.at(hit.getT()) + eps * light_dir;
-    remaining -= (hit.getT() + eps);
+  ray shadow_ray(p + eps * n, light_dir, glm::dvec3(1.0), ray::SHADOW);
+  isect hit;
+  if (!getScene()->intersect(shadow_ray, hit) || hit.getT() >= light_distance - eps) {
+    return glm::dvec3(1.0);
   }
-
-  return attenuation;
+  const glm::dvec3 kt = glm::clamp(hit.getMaterial().kt(hit), 0.0, 1.0);
+  if (glm::length(kt) <= 1e-8) {
+    return glm::dvec3(0.0);
+  }
+  return kt;
 }
 
 #define VERBOSE 0
