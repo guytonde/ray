@@ -37,17 +37,21 @@ __Portals (EC)__
   `build/bin/ray -r 5 -w 640 assets/custom/portal_rect.json raycheck.out/portal_preview.png`
 
 __Neural Network Upsampling (EC)__
-- Training/evaluation script: `ec_neuralnet.py`
-- Inference script: `nn_infer.py`
-- `nn_infer.py` supports post-processing existing images: `--input <image_or_dir>`.
-- `nn_infer.py` also supports end-to-end ray trace + post-process: `--scene <scene_file>`.
-- In scene mode, the script runs the ray tracer first, then applies NN upsampling/antialiasing.
-- Extra ray-tracer flags can be passed through with `--ray-args ...`.
-- Baselines include bicubic and Gaussian filtering, and `--render-reference` prints PSNR comparisons.
-- Example (full pipeline, with baseline comparison):
-  `python3 nn_infer.py --scene assets/custom/custom.json --output raycheck.out/nn_demo --model our_model.pth --upscale 2 --render-width 320 --render-reference --save-comparison --ray-args -r 5`
-- Example (inference-only on existing image):
-  `python3 nn_infer.py --input raycheck.out/base/image/simple_box.png --output raycheck.out/nn_demo --model our_model.pth --upscale 2`
+- `download_data_neuralnet.py` downloads the DIV2K dataset (train + validation splits) from ETH Zurich; 800 training images and 100 validation images, all high-resolution PNG.
+- Prints a final summary of how many `.png` files landed in each folder.
+- `ec_neuralnet.py` defines `UpsampleNN`, an EDSR/RCAN-style super-resolution network
+- it learns only the high-frequency residual on top of a bicubic upscale, with 16 residual blocks, channel attention, and no batch norm
+- we cited a couple papers we read about it in the code
+- `ImagePairDataset` generates LR/HR pairs on-the-fly by bicubic-downscaling HR crops so no separate LR folder needed; supports random horizontal/vertical flips for augmentation
+- `train()` runs the training loop with L1 loss, mixed-precision, and a cosine LR schedule
+- `evaluate_and_save_results()` benchmarks the trained model against bicubic and Gaussian baselines using PSNR and SSIM, and saves a 4-panel comparison image per input
+- When run as `__main__`, trains on `DIV2K_train_HR` for 15 epochs (or loads existing weights), then evaluates on both `nn_inputs/` and `DIV2K_valid_HR/`
+
+- `nn_infer.py` imports `UpsampleNN` from `ec_neuralnet.py` and has two input modes: `--input` (upscale an existing image/folder) or `--scene` (invoke the ray tracer as a subprocess first, then upscale the output)
+- `--scene` mode optionally renders a high-res reference at `width x upscale` alongside the low-res render for comparison
+- When a reference is provided, computes and prints a PSNR + SSIM table comparing NN vs. bicubic vs. Gaussian
+- Optionally saves a labeled 4-panel side-by-side strip (HR ref / bicubic / gaussian / neural net) via `--save-comparison`
+- Supports pass-through flags to the ray binary via `--ray-args`, including `--render-cubemap` for cubemap scenes
 
 __Overlapping Objects (EC)__
 - Added overlap-aware refraction by tracking active transmissive media per ray.

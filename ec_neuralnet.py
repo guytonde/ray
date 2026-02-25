@@ -225,7 +225,7 @@ def train(model, train_dataloader, val_dataloader, optimizer, criterion, device,
     print(f"Model saved as {save_path}")
 
 
-def evaluate_and_save_results_fast(model, dataset, device, output_folder="comparison_results", batch_size=4):
+def evaluate_and_save_results(model, dataset, device, output_folder="comparison_results", batch_size=4):
     os.makedirs(output_folder, exist_ok=True)
     model.eval()
     dataset.eval_mode()
@@ -346,11 +346,11 @@ if __name__ == "__main__":
     train_domain_dataset = ImagePairDataset(
         "nn_inputs", upscale_factor=upscale_factor, augment=False, patches_per_image=1
     )
-    evaluate_and_save_results_fast(model, train_domain_dataset, device, output_folder="comparison_results", batch_size=4)
+    evaluate_and_save_results(model, train_domain_dataset, device, output_folder="comparison_results", batch_size=4)
 
 
     print("\nEvaluating on DIV2K validation set...")
-    evaluate_and_save_results_fast(model, val_dataset, device, output_folder="comparison_results_val", batch_size=1)
+    evaluate_and_save_results(model, val_dataset, device, output_folder="comparison_results_val", batch_size=1)
 
 
 
