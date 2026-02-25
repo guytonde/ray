@@ -5,77 +5,15 @@ from typing import List, Optional
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image, ImageFilter
+from skimage.metrics import structural_similarity as ssim_metric
+
+from ec_neuralnet import UpsampleNN
 
 
-
-
-class ChannelAttention(nn.Module):
-    def __init__(self, channels: int, reduction: int = 16):
-        super().__init__()
-        reduced = max(1, channels // reduction)
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Conv2d(channels, reduced, kernel_size=1, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(reduced, channels, kernel_size=1, bias=True),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, x):
-        return x * self.fc(self.avg_pool(x))
-
-
-class ResidualBlock(nn.Module):
-    def __init__(self, channels: int = 32, res_scale: float = 0.1):
-        super().__init__()
-        self.body = nn.Sequential(
-            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
-            ChannelAttention(channels),
-        )
-        self.res_scale = res_scale
-
-    def forward(self, x):
-        return x + self.body(x) * self.res_scale
-
-
-class UpsampleNN(nn.Module):
-    def __init__(
-        self, upscale_factor: int = 2, num_res_blocks: int = 16, channels: int = 32
-    ):
-        super().__init__()
-        self.upscale_factor = upscale_factor
-        self.conv_input = nn.Conv2d(3, channels, kernel_size=3, padding=1)
-        self.res_blocks = nn.Sequential(
-            *[ResidualBlock(channels, res_scale=0.1) for _ in range(num_res_blocks)]
-        )
-        self.conv_post_res = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
-        self.conv_pre_upsample = nn.Conv2d(
-            channels, channels * (upscale_factor ** 2), kernel_size=3, padding=1
-        )
-        self.pixel_shuffle = nn.PixelShuffle(upscale_factor)
-        self.conv_output = nn.Conv2d(channels, 3, kernel_size=3, padding=1)
-
-    def forward(self, x):
-        bicubic_up = F.interpolate(
-            x, scale_factor=self.upscale_factor, mode="bicubic", align_corners=False
-        )
-        feat = self.conv_input(x)
-        res = self.res_blocks(feat)
-        res = self.conv_post_res(res)
-        feat = feat + res
-        feat = self.conv_pre_upsample(feat)
-        feat = self.pixel_shuffle(feat)
-        residual_out = self.conv_output(feat)
-        return bicubic_up + residual_out
-
-
-def load_state_dict_compatible(model: nn.Module, model_path: Path, device: torch.device):
-    checkpoint = torch.load(model_path, map_location=device)
+def load_state_dict_compatible(model, model_path: Path, device: torch.device):
+    checkpoint = torch.load(model_path, map_location=device, weights_only=True)
 
     if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
         state_dict = checkpoint["state_dict"]
@@ -83,7 +21,7 @@ def load_state_dict_compatible(model: nn.Module, model_path: Path, device: torch
         state_dict = checkpoint
 
     if all(k.startswith("module.") for k in state_dict.keys()):
-        state_dict = {k[len("module.") :]: v for k, v in state_dict.items()}
+        state_dict = {k[len("module."):]: v for k, v in state_dict.items()}
 
     model.load_state_dict(state_dict, strict=True)
 
@@ -102,7 +40,6 @@ def tensor_to_image(t: torch.Tensor) -> Image.Image:
 def collect_inputs(path: Path):
     if path.is_file():
         return [path]
-
     exts = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
     return sorted([p for p in path.iterdir() if p.is_file() and p.suffix.lower() in exts])
 
@@ -151,6 +88,10 @@ def psnr(pred: np.ndarray, target: np.ndarray, epsilon: float = 1e-10) -> float:
     return 10.0 * np.log10(1.0 / (mse + epsilon))
 
 
+def ssim(pred: np.ndarray, target: np.ndarray) -> float:
+    return ssim_metric(pred, target, channel_axis=2, data_range=1.0)
+
+
 def save_comparison_strip(
     ref_img: Image.Image,
     bicubic_img: Image.Image,
@@ -158,12 +99,24 @@ def save_comparison_strip(
     nn_img: Image.Image,
     output_path: Path,
 ):
+    from PIL import ImageDraw, ImageFont
     w, h = ref_img.size
-    canvas = Image.new("RGB", (w * 4, h))
-    canvas.paste(ref_img, (0, 0))
-    canvas.paste(bicubic_img, (w, 0))
-    canvas.paste(gaussian_img, (2 * w, 0))
-    canvas.paste(nn_img, (3 * w, 0))
+    label_h = 24
+    canvas = Image.new("RGB", (w * 4, h + label_h), color=(20, 20, 20))
+    canvas.paste(ref_img,      (0,     label_h))
+    canvas.paste(bicubic_img,  (w,     label_h))
+    canvas.paste(gaussian_img, (w * 2, label_h))
+    canvas.paste(nn_img,       (w * 3, label_h))
+
+    draw = ImageDraw.Draw(canvas)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+    except Exception:
+        font = ImageFont.load_default()
+
+    for i, label in enumerate(["HR Reference", "Bicubic", "Gaussian", "Neural Net"]):
+        draw.text((i * w + 4, 4), label, fill=(255, 255, 255), font=font)
+
     canvas.save(output_path)
 
 
@@ -196,15 +149,10 @@ def main():
     )
 
     parser.add_argument("--ray-bin", default="build/bin/ray", help="Ray tracer binary path")
-    parser.add_argument(
-        "--render-width",
-        type=int,
-        default=320,
-        help="Low-res width for the pre-NN ray-traced render",
-    )
-    parser.add_argument(
-        "--render-depth", type=int, default=5, help="Recursion depth used for render mode"
-    )
+    parser.add_argument("--render-width", type=int, default=320,
+                        help="Low-res width for the pre-NN ray-traced render")
+    parser.add_argument("--render-depth", type=int, default=5,
+                        help="Recursion depth used for render mode")
     parser.add_argument("--render-json", help="Optional ray-tracer json settings file")
     parser.add_argument("--render-cubemap", help="Optional cubemap file for render mode")
     parser.add_argument(
@@ -216,10 +164,13 @@ def main():
         "--ray-args",
         nargs=argparse.REMAINDER,
         default=[],
-        help="Pass-through args appended directly to ray tracer command",
+        help="Pass-through args appended directly to ray tracer command (after --)",
     )
 
     args = parser.parse_args()
+
+    # Strip '--' separator that argparse.REMAINDER captures literally
+    ray_args = [a for a in args.ray_args if a != "--"]
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -256,7 +207,7 @@ def main():
             depth=args.render_depth,
             render_json=args.render_json,
             render_cubemap=args.render_cubemap,
-            ray_args=args.ray_args,
+            ray_args=ray_args,
         )
         run_ray_command(cmd)
 
@@ -271,7 +222,7 @@ def main():
                 depth=args.render_depth,
                 render_json=args.render_json,
                 render_cubemap=args.render_cubemap,
-                ray_args=args.ray_args,
+                ray_args=ray_args,
             )
             run_ray_command(ref_cmd)
             reference_path = ref_render
@@ -301,7 +252,8 @@ def main():
         for src in files:
             img = Image.open(src).convert("RGB")
             inp = image_to_tensor(img, device)
-            pred = model(inp)
+            with torch.amp.autocast('cuda', enabled=(device.type == "cuda")):
+                pred = model(inp)
             nn_img = tensor_to_image(pred)
 
             out_name = f"{src.stem}_nnx{args.upscale}{src.suffix.lower()}"
@@ -316,10 +268,10 @@ def main():
             if ref_img.size != nn_img.size:
                 ref_img = ref_img.resize(nn_img.size, Image.BICUBIC)
 
-            bicubic_img = img.resize(nn_img.size, Image.BICUBIC)
+            bicubic_img  = img.resize(nn_img.size, Image.BICUBIC)
             gaussian_img = bicubic_img.filter(ImageFilter.GaussianBlur(radius=1.0))
 
-            bicubic_out = output_dir / f"{src.stem}_bicubicx{args.upscale}.png"
+            bicubic_out  = output_dir / f"{src.stem}_bicubicx{args.upscale}.png"
             gaussian_out = output_dir / f"{src.stem}_gaussianx{args.upscale}.png"
             bicubic_img.save(bicubic_out)
             gaussian_img.save(gaussian_out)
@@ -327,20 +279,24 @@ def main():
             print(f"Saved baseline output: {gaussian_out}")
 
             ref_np = np_rgb01(ref_img)
-            nn_np = np_rgb01(nn_img)
+            nn_np  = np_rgb01(nn_img)
             bic_np = np_rgb01(bicubic_img)
             gau_np = np_rgb01(gaussian_img)
 
-            psnr_nn = psnr(nn_np, ref_np)
+            psnr_nn  = psnr(nn_np,  ref_np)
             psnr_bic = psnr(bic_np, ref_np)
             psnr_gau = psnr(gau_np, ref_np)
+            ssim_nn  = ssim(nn_np,  ref_np)
+            ssim_bic = ssim(bic_np, ref_np)
+            ssim_gau = ssim(gau_np, ref_np)
 
             print("Comparison against reference:")
-            print(f"  NN       PSNR: {psnr_nn:.3f} dB")
-            print(f"  Bicubic  PSNR: {psnr_bic:.3f} dB")
-            print(f"  Gaussian PSNR: {psnr_gau:.3f} dB")
-            print(f"  NN - Bicubic:  {psnr_nn - psnr_bic:+.3f} dB")
-            print(f"  NN - Gaussian: {psnr_nn - psnr_gau:+.3f} dB")
+            print(f"  {'Method':<10} {'PSNR (dB)':>10}  {'SSIM':>6}")
+            print(f"  {'NN':<10} {psnr_nn:>10.3f}  {ssim_nn:>6.4f}")
+            print(f"  {'Bicubic':<10} {psnr_bic:>10.3f}  {ssim_bic:>6.4f}")
+            print(f"  {'Gaussian':<10} {psnr_gau:>10.3f}  {ssim_gau:>6.4f}")
+            print(f"  NN vs Bicubic:  {psnr_nn - psnr_bic:+.3f} dB  {ssim_nn - ssim_bic:+.4f} SSIM")
+            print(f"  NN vs Gaussian: {psnr_nn - psnr_gau:+.3f} dB  {ssim_nn - ssim_gau:+.4f} SSIM")
 
             if args.save_comparison:
                 strip_path = output_dir / f"{src.stem}_comparison.png"
