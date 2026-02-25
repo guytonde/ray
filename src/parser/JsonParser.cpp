@@ -4,6 +4,8 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_USE_DOUBLE
 #include "tiny_obj_loader.h"
+#include <algorithm>
+#include <cctype>
 #include <sstream>
 
 #include <glm/gtc/type_ptr.hpp>
@@ -180,6 +182,65 @@ Cone *parseConeBody(const json &j, ParseData &pd) {
   return c;
 }
 
+Portal *parsePortalBody(const json &j, ParseData &pd) {
+  Material m = GET_MAT_W_CUR(j, pd);
+
+  std::string pairId;
+  if (hasKey(j, "pair")) {
+    pairId = j.at("pair").get<std::string>();
+  } else if (hasKey(j, "pair_id")) {
+    pairId = j.at("pair_id").get<std::string>();
+  } else {
+    throw ParserException(
+        "Portal must include a pair identifier (\"pair\" or \"pair_id\").");
+  }
+
+  std::string shape = "rectangle";
+  IGNORE_MISSING(shape = j.at("shape").get<std::string>());
+  std::transform(shape.begin(), shape.end(), shape.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  Portal::ShapeType shapeType;
+  double radius = 0.5;
+  double width = 1.0;
+  double height = 1.0;
+
+  if (shape == "circle") {
+    shapeType = Portal::ShapeType::Circle;
+    IGNORE_MISSING(j.at("radius").get_to(radius));
+    if (radius <= 0.0) {
+      throw ParserException("Portal radius must be > 0.");
+    }
+  } else if (shape == "rectangle" || shape == "rect") {
+    shapeType = Portal::ShapeType::Rectangle;
+    IGNORE_MISSING(j.at("width").get_to(width));
+    IGNORE_MISSING(j.at("height").get_to(height));
+    IGNORE_MISSING(width = j.at("size").at(0).get<double>());
+    IGNORE_MISSING(height = j.at("size").at(1).get<double>());
+    if (width <= 0.0 || height <= 0.0) {
+      throw ParserException("Portal width and height must be > 0.");
+    }
+  } else {
+    throw ParserException("Portal shape must be \"circle\" or \"rectangle\".");
+  }
+
+  auto *portal =
+      new Portal(pd.s, &m, pd.getCurrentTransform(), shapeType, radius, width,
+                 height);
+
+  auto it = pd.unpairedPortals.find(pairId);
+  if (it == pd.unpairedPortals.end()) {
+    pd.unpairedPortals.emplace(pairId, portal);
+  } else {
+    Portal *other = it->second;
+    other->setLinkedPortal(portal);
+    portal->setLinkedPortal(other);
+    pd.unpairedPortals.erase(it);
+  }
+
+  return portal;
+}
+
 Trimesh *parseTrimeshBody(const json &j, ParseData &pd) {
   Material m = GET_MAT_W_CUR(j, pd);
   auto t = new Trimesh(pd.s, &m, pd.getCurrentTransform());
@@ -264,6 +325,8 @@ std::vector<Geometry *> parseGeometry(const json &j, ParseData &pd) {
     return {parseCylinderBody(val, pd)};
   } else if (key == "cone") {
     return {parseConeBody(val, pd)};
+  } else if (key == "portal") {
+    return {parsePortalBody(val, pd)};
   } else if (key == "tri_mesh") {
     return {parseTrimeshBody(val, pd)};
   } else if (key == "obj_mesh") {
@@ -280,8 +343,8 @@ bool isTransformKey(const std::string &s) {
   return std::find(std::begin(transformKeys), std::end(transformKeys), s) !=
          std::end(transformKeys);
 }
-const std::string geomKeys[7] = {"sphere", "box",      "square",  "cylinder",
-                                 "cone",   "tri_mesh", "obj_mesh"};
+const std::string geomKeys[8] = {"sphere", "box",    "square",  "cylinder",
+                                 "cone",   "portal", "tri_mesh", "obj_mesh"};
 bool isGeometryKey(const std::string &s) {
   return std::find(std::begin(geomKeys), std::end(geomKeys), s) !=
          std::end(geomKeys);
@@ -380,6 +443,15 @@ Scene *JsonParser::parseScene() {
     }
   }
 
+  if (!pd.unpairedPortals.empty()) {
+    std::stringstream ss;
+    ss << "Unpaired portal ids:";
+    for (const auto &[pairId, portal] : pd.unpairedPortals) {
+      (void)portal;
+      ss << " " << pairId;
+    }
+    throw ParserException(ss.str());
+  }
 
   return scene;
 }

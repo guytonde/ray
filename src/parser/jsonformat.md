@@ -44,6 +44,7 @@ The valid object types (keys) are:
   - `square`
   - `cylinder`
   - `cone`
+  - `portal`
   - `tri_mesh`
   - `obj_mesh`
   - `material`
@@ -251,6 +252,31 @@ Example:
     "bottom_radius": 0.25,
     "top_radius": 0.25,
     "material": { "diffuse": [0.5, 0.5, 0.5] }
+  }
+}
+```
+
+#### portal
+
+A portal is an opening that teleports rays to its linked partner portal.
+Portals are linked in pairs by a shared identifier.
+
+Supported parameters:
+
+- `pair` (or `pair_id`): string identifier used to link exactly two portals.
+- `shape`: either `circle` or `rectangle` (`rectangle` is default).
+- `radius`: required for `circle` shape.
+- `width`, `height`: used for `rectangle` shape.
+
+Example:
+
+```json
+{
+  "portal": {
+    "shape": "rectangle",
+    "width": 1.0,
+    "height": 2.0,
+    "pair": "A"
   }
 }
 ```

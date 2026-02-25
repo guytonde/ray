@@ -54,7 +54,13 @@ EOF
     --i-understand-that-image-metrics-are-not-perfect
 done
 
+echo "Rendering portal demo scenes..."
+mkdir -p raycheck.out/portal
+build/bin/ray -r 5 -w 640 assets/portal_scenes/portal_rect.json raycheck.out/portal/portal_rect.png
+build/bin/ray -r 5 -w 640 assets/portal_scenes/portal_circle.json raycheck.out/portal/portal_circle.png
+
 echo "Done."
 echo "Baseline report: raycheck.out/report.csv"
 echo "Cubemap report: raycheck.out/cubemap/report.csv"
 echo "AA reports: raycheck.out/aa/s1/report.csv ... raycheck.out/aa/s4/report.csv"
+echo "Portal demos: raycheck.out/portal/portal_rect.png and raycheck.out/portal/portal_circle.png"

@@ -1,5 +1,6 @@
 #include <cmath>
 
+#include "../SceneObjects/Portal.h"
 #include "../ui/TraceUI.h"
 #include "light.h"
 #include "scene.h"
@@ -136,40 +137,79 @@ void Scene::buildAcceleration(int maxDepth, int leafSize) {
 // Get any intersection with an object.  Return information about the
 // intersection through the reference parameter.
 bool Scene::intersect(ray &r, isect &i) const {
-  bool have_one = false;
   const bool useBvh =
       (traceUI != nullptr) && traceUI->kdSwitch() && bvh && !bvh->empty();
 
-  if (useBvh) {
-    have_one = bvh->intersect(r, i);
-    for (const auto *obj : nonBoundedObjects) {
-      isect cur;
-      if (obj->intersect(r, cur)) {
-        if (!have_one || cur.getT() < i.getT()) {
-          i = cur;
-          have_one = true;
+  auto traceNearest = [&](ray &queryRay, isect &hitIsect) -> bool {
+    bool haveOne = false;
+    if (useBvh) {
+      haveOne = bvh->intersect(queryRay, hitIsect);
+      for (const auto *obj : nonBoundedObjects) {
+        isect cur;
+        if (obj->intersect(queryRay, cur)) {
+          if (!haveOne || cur.getT() < hitIsect.getT()) {
+            hitIsect = cur;
+            haveOne = true;
+          }
+        }
+      }
+    } else {
+      for (const auto &obj : objects) {
+        isect cur;
+        if (obj->intersect(queryRay, cur)) {
+          if (!haveOne || (cur.getT() < hitIsect.getT())) {
+            hitIsect = cur;
+            haveOne = true;
+          }
         }
       }
     }
-  } else {
-    for (const auto &obj : objects) {
-      isect cur;
-      if (obj->intersect(r, cur)) {
-        if (!have_one || (cur.getT() < i.getT())) {
-          i = cur;
-          have_one = true;
-        }
+
+    if (!haveOne) {
+      hitIsect.setT(1000.0);
+    }
+    return haveOne;
+  };
+
+  constexpr int MAX_PORTAL_HOPS = 64;
+  ray segmentRay = r;
+
+  for (int hop = 0; hop <= MAX_PORTAL_HOPS; ++hop) {
+    isect curHit;
+    const bool haveOne = traceNearest(segmentRay, curHit);
+    if (!haveOne) {
+      i = curHit;
+      r = segmentRay;
+      if (TraceUI::m_debug) {
+        addToIntersectCache(std::make_pair(new ray(r), new isect(i)));
+      }
+      return false;
+    }
+
+    const SceneObject *hitObj = curHit.getObject();
+    const auto *portal = dynamic_cast<const Portal *>(hitObj);
+    if (portal && portal->isLinked()) {
+      ray teleportedRay = segmentRay;
+      if (portal->teleportRay(segmentRay, curHit.getT(), teleportedRay)) {
+        segmentRay = teleportedRay;
+        continue;
       }
     }
+
+    i = curHit;
+    r = segmentRay;
+    if (TraceUI::m_debug) {
+      addToIntersectCache(std::make_pair(new ray(r), new isect(i)));
+    }
+    return true;
   }
 
-  if (!have_one)
-    i.setT(1000.0);
-  // if debugging,
+  i.setT(1000.0);
+  r = segmentRay;
   if (TraceUI::m_debug) {
     addToIntersectCache(std::make_pair(new ray(r), new isect(i)));
   }
-  return have_one;
+  return false;
 }
 
 TextureMap *Scene::getTexture(string name) {

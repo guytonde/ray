@@ -72,6 +72,7 @@ public:
   }
 
   void setObject(const SceneObject *o) { obj = o; }
+  const SceneObject *getObject() const { return obj; }
 
   // Get/Set Time of flight
   void setT(double tt) { t = tt; }

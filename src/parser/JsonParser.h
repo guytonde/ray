@@ -17,6 +17,7 @@ see what's going wrong. */
 
 #include <map>
 #include <string>
+#include <unordered_map>
 
 #include <filesystem>
 #include <fstream>
@@ -32,6 +33,7 @@ using json = nlohmann::json;
 #include "../SceneObjects/Box.h"
 #include "../SceneObjects/Cone.h"
 #include "../SceneObjects/Cylinder.h"
+#include "../SceneObjects/Portal.h"
 #include "../SceneObjects/Sphere.h"
 #include "../SceneObjects/Square.h"
 #include "../SceneObjects/trimesh.h"
@@ -53,6 +55,7 @@ struct ParseData {
   std::vector<glm::dmat4> transformStack;
   Scene *s;
   std::filesystem::path scene_dir;
+  std::unordered_map<std::string, Portal *> unpairedPortals;
 
   glm::dmat4 getCurrentTransform();
 };
@@ -75,6 +78,7 @@ Box *parseBoxBody(const json &j, ParseData &pd);
 Square *parseSquareBody(const json &j, ParseData &pd);
 Cylinder *parseCylinderBody(const json &j, ParseData &pd);
 Cone *parseConeBody(const json &j, ParseData &pd);
+Portal *parsePortalBody(const json &j, ParseData &pd);
 Trimesh *parseTrimeshBody(const json &j, ParseData &pd);
 std::vector<Trimesh *> parseObjmeshBody(const json &j, ParseData &pd);
 std::vector<Geometry *> parseGeometry(const json &j, ParseData &pd);
