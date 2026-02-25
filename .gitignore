@@ -8,8 +8,3 @@ raycheck.out
 # assets/
 # assets/scenes_og/
 scenes_all/
-
-# Keep only custom EC scenes tracked.
-assets/scenes/
-!assets/custom/
-!assets/custom/**
