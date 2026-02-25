@@ -15,14 +15,14 @@ __Assignment Part 2__
 - For triangle meshes, backface culling is enabled for non-refraction rays and disabled for refraction rays.
 
 __Creative Scene (EC)__
-- We include custom creative scenes in `assets/scenes/custom.json`, `assets/scenes/custom2.json`, `assets/scenes/custom3.json`, and `assets/scenes/custom4.json`.
+- We include custom creative scenes in `assets/custom/custom.json`, `assets/custom/custom2.json`, `assets/custom/custom3.json`, and `assets/custom/custom4.json`.
 - These scenes are designed to show combined effects (multi-light shading, reflections/refractions, and complex object/layout composition).
-- Example run command: `build/bin/ray -r 5 assets/scenes/custom4.json raycheck.out/custom4_preview.png`.
+- Example run command: `build/bin/ray -r 5 assets/custom/custom4.json raycheck.out/custom4_preview.png`.
 
 __Portals (EC)__
 - We implement portal rendering with paired circular/rectangular openings where rays entering one portal emerge from its linked partner.
-- Portal scenes are in `assets/portal_scenes/portal_rect.json` and `assets/portal_scenes/portal_circle.json`.
-- Example run command: `build/bin/ray -r 5 -w 640 assets/portal_scenes/portal_rect.json raycheck.out/portal_preview.png`.
+- Portal scenes are in `assets/custom/portal_rect.json` and `assets/custom/portal_circle.json`.
+- Example run command: `build/bin/ray -r 5 -w 640 assets/custom/portal_rect.json raycheck.out/portal_preview.png`.
 
 __Neural Network (EC)__
 - We include a neural-network upsampling/anti-aliasing pipeline with baseline comparisons against bicubic and Gaussian filtering.
@@ -30,9 +30,19 @@ __Neural Network (EC)__
 - Inference-only usage is provided in `nn_infer.py`.
 - Example inference command: `python3 nn_infer.py --input <input_file_or_dir> --output <output_dir> --model our_model.pth --upscale 2`.
 
+__Overlapping Objects (EC)__
+- We add overlap-aware refraction by tracking the active transmissive media along a refraction ray.
+- The overlap-aware mode is opt-in, so required-scene behavior remains unchanged unless enabled.
+- In the common non-overlap case (air to one object and back to air), we preserve the original transition behavior.
+- For overlap/containment transitions, we use current-medium to next-medium indices for Snell refraction.
+- Assumption in ambiguous overlap regions: the effective medium is the most recently entered transmissive object.
+- Demo scene: `assets/custom/custom_overlap.json`.
+- Example run command: `RAY_ENABLE_OVERLAP_REFRACTION=1 build/bin/ray -r 7 -w 640 assets/custom/custom_overlap.json raycheck.out/overlap/custom_overlap.png`.
+
 __Build and Testing__
 - We run `./build.sh` to build in Release mode and run the test sweep.
 - The script runs baseline `raycheck` over standard scenes and writes the summary to `raycheck.out/report.csv`.
 - The script runs cubemap-specific checks and writes results to `raycheck.out/cubemap/report.csv`.
 - The script runs anti-aliasing checks for supersamples 1, 2, 3, and 4 in `raycheck.out/aa/s1` through `raycheck.out/aa/s4`.
 - The script renders portal demo outputs to `raycheck.out/portal/portal_rect.png` and `raycheck.out/portal/portal_circle.png`.
+- The script also renders the overlap demo output to `raycheck.out/overlap/custom_overlap.png`.

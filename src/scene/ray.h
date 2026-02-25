@@ -14,6 +14,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <memory>
+#include <vector>
 
 class SceneObject;
 class isect;
@@ -29,6 +30,10 @@ extern thread_local unsigned int ray_thread_id;
 class ray {
 public:
   enum RayType { VISIBILITY, REFLECTION, REFRACTION, SHADOW };
+  struct MediumState {
+    const SceneObject *object;
+    double ior;
+  };
 
   ray(const glm::dvec3 &pp, const glm::dvec3 &dd, const glm::dvec3 &w,
       RayType tt = VISIBILITY);
@@ -44,15 +49,23 @@ public:
   glm::dvec3 getDirection() const { return d; }
   glm::dvec3 getAtten() const { return atten; }
   RayType type() const { return t; }
+  double currentMediumIor() const;
+  bool containsMedium(const SceneObject *obj) const;
+  int mediumDepth() const;
 
   void setPosition(const glm::dvec3 &pp) { p = pp; }
   void setDirection(const glm::dvec3 &dd) { d = dd; }
+
+  void setMediaFrom(const ray &other);
+  void pushMedium(const SceneObject *obj, double ior);
+  bool removeMedium(const SceneObject *obj);
 
 private:
   glm::dvec3 p;
   glm::dvec3 d;
   glm::dvec3 atten;
   RayType t;
+  std::vector<MediumState> media;
 };
 
 

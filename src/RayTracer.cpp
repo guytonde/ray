@@ -13,6 +13,7 @@
 #include "ui/TraceUI.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <glm/glm.hpp>
 #include <glm/gtx/io.hpp>
 #include <string.h>
@@ -116,6 +117,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
         const glm::dvec3 point = r.at(i.getT());
         const glm::dvec3 normal = glm::normalize(i.getN());
         const glm::dvec3 incident = glm::normalize(r.getDirection());
+        const SceneObject *hit_object = i.getObject();
         t = i.getT();
 
         const double REFLECT_EPSILON = 1e-4;
@@ -145,11 +147,55 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                     }
 
                     double d_dot_n = glm::dot(incident, n);
-                    if (d_dot_n > 0.0) {
-                        n = -n;
-                        n1 = n2;
-                        n2 = 1.0;
-                        d_dot_n = glm::dot(incident, n);
+                    ray refract_ray(point, incident, glm::dvec3(1.0), ray::REFRACTION);
+
+                    if (!overlapRefractionEnabled) {
+                        if (d_dot_n > 0.0) {
+                            n = -n;
+                            n1 = n2;
+                            n2 = 1.0;
+                            d_dot_n = glm::dot(incident, n);
+                        }
+                    } else {
+                        const bool exiting_by_normal = (d_dot_n > 0.0);
+                        if (exiting_by_normal) {
+                            n = -n;
+                            d_dot_n = glm::dot(incident, n);
+                        }
+
+                        const double object_ior = std::max(1.0, m.index(i));
+                        const bool was_inside_hit_object =
+                            (hit_object != nullptr) && r.containsMedium(hit_object);
+
+                        // Preserve legacy behavior for common non-overlap cases.
+                        const bool legacy_air_to_object =
+                            !was_inside_hit_object && !exiting_by_normal &&
+                            (std::abs(r.currentMediumIor() - 1.0) <= 1e-9);
+                        const bool legacy_object_to_air =
+                            was_inside_hit_object && exiting_by_normal &&
+                            (r.mediumDepth() == 1);
+
+                        if (legacy_air_to_object) {
+                            n1 = 1.0;
+                            n2 = object_ior;
+                            refract_ray.pushMedium(hit_object, object_ior);
+                        } else if (legacy_object_to_air) {
+                            n1 = object_ior;
+                            n2 = 1.0;
+                            refract_ray.setMediaFrom(r);
+                            refract_ray.removeMedium(hit_object);
+                        } else {
+                            refract_ray.setMediaFrom(r);
+                            n1 = r.currentMediumIor();
+                            if (hit_object != nullptr) {
+                                if (was_inside_hit_object) {
+                                    refract_ray.removeMedium(hit_object);
+                                } else {
+                                    refract_ray.pushMedium(hit_object, object_ior);
+                                }
+                            }
+                            n2 = refract_ray.currentMediumIor();
+                        }
                     }
 
                     glm::dvec3 refract_dir(incident);
@@ -171,8 +217,8 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                     }
 
                     if (has_refract) {
-                        ray refract_ray(point + REFRACT_EPSILON * refract_dir, refract_dir,
-                                        glm::dvec3(1.0), ray::REFRACTION);
+                        refract_ray.setPosition(point + REFRACT_EPSILON * refract_dir);
+                        refract_ray.setDirection(refract_dir);
                         double dummy_t = 0.0;
                         colorC += traceRay(refract_ray, thresh, depth - 1, dummy_t);
                     }
@@ -198,7 +244,7 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
 RayTracer::RayTracer()
     : scene(nullptr), buffer(0), thresh(0), buffer_width(0), buffer_height(0),
-      m_bBufferReady(false) {
+      m_bBufferReady(false), overlapRefractionEnabled(false) {
 }
 
 RayTracer::~RayTracer() {}
@@ -214,6 +260,11 @@ double RayTracer::aspectRatio() {
 }
 
 bool RayTracer::loadScene(const char *fn) {
+  overlapRefractionEnabled = false;
+  if (const char *envValue = std::getenv("RAY_ENABLE_OVERLAP_REFRACTION")) {
+    overlapRefractionEnabled = strcmp(envValue, "0") != 0;
+  }
+
   ifstream ifs(fn);
   if (!ifs) {
     string msg("Error: couldn't read scene file ");

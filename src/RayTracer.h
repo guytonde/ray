@@ -83,6 +83,7 @@ private:
   std::atomic<bool> rendering{false};
 
   std::vector<std::thread> worker_threads;
+  bool overlapRefractionEnabled;
 };
 
 #endif // __RAYTRACER_H__

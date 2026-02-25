@@ -20,6 +20,18 @@ python3 raycheck.py \
   --i-understand-that-image-metrics-are-not-perfect
 cp -f raycheck.out/base/report.csv raycheck.out/report.csv
 
+echo "Running custom scene sweep..."
+mkdir -p raycheck.out/custom_scenes
+ln -sf ../../assets/custom/custom.json raycheck.out/custom_scenes/custom.json
+ln -sf ../../assets/custom/custom2.json raycheck.out/custom_scenes/custom2.json
+ln -sf ../../assets/custom/custom3.json raycheck.out/custom_scenes/custom3.json
+ln -sf ../../assets/custom/custom4.json raycheck.out/custom_scenes/custom4.json
+python3 raycheck.py \
+  --refbin ./ray-solution \
+  --scenes raycheck.out/custom_scenes \
+  --out raycheck.out/custom \
+  --i-understand-that-image-metrics-are-not-perfect
+
 echo "Running cubemap-specific tests..."
 mkdir -p raycheck.out/cubemap_scenes/trimesh
 ln -sf ../../assets/scenes/scene_blank.json raycheck.out/cubemap_scenes/scene_blank.json
@@ -56,11 +68,18 @@ done
 
 echo "Rendering portal demo scenes..."
 mkdir -p raycheck.out/portal
-build/bin/ray -r 5 -w 640 assets/portal_scenes/portal_rect.json raycheck.out/portal/portal_rect.png
-build/bin/ray -r 5 -w 640 assets/portal_scenes/portal_circle.json raycheck.out/portal/portal_circle.png
+build/bin/ray -r 5 -w 640 assets/custom/portal_rect.json raycheck.out/portal/portal_rect.png
+build/bin/ray -r 5 -w 640 assets/custom/portal_circle.json raycheck.out/portal/portal_circle.png
+
+echo "Rendering overlap demo scene..."
+mkdir -p raycheck.out/overlap
+RAY_ENABLE_OVERLAP_REFRACTION=1 \
+  build/bin/ray -r 7 -w 640 assets/custom/custom_overlap.json raycheck.out/overlap/custom_overlap.png
 
 echo "Done."
 echo "Baseline report: raycheck.out/report.csv"
+echo "Custom report: raycheck.out/custom/report.csv"
 echo "Cubemap report: raycheck.out/cubemap/report.csv"
 echo "AA reports: raycheck.out/aa/s1/report.csv ... raycheck.out/aa/s4/report.csv"
 echo "Portal demos: raycheck.out/portal/portal_rect.png and raycheck.out/portal/portal_circle.png"
+echo "Overlap demo: raycheck.out/overlap/custom_overlap.png"
