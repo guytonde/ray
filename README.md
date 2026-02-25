@@ -46,12 +46,24 @@ __Neural Network Upsampling (EC)__
 - `train()` runs the training loop with L1 loss, mixed-precision, and a cosine LR schedule
 - `evaluate_and_save_results()` benchmarks the trained model against bicubic and Gaussian baselines using PSNR and SSIM, and saves a 4-panel comparison image per input
 - When run as `__main__`, trains on `DIV2K_train_HR` for 15 epochs (or loads existing weights), then evaluates on both `nn_inputs/` and `DIV2K_valid_HR/`
-
 - `nn_infer.py` imports `UpsampleNN` from `ec_neuralnet.py` and has two input modes: `--input` (upscale an existing image/folder) or `--scene` (invoke the ray tracer as a subprocess first, then upscale the output)
 - `--scene` mode optionally renders a high-res reference at `width x upscale` alongside the low-res render for comparison
 - When a reference is provided, computes and prints a PSNR + SSIM table comparing NN vs. bicubic vs. Gaussian
 - Optionally saves a labeled 4-panel side-by-side strip (HR ref / bicubic / gaussian / neural net) via `--save-comparison`
 - Supports pass-through flags to the ray binary via `--ray-args`, including `--render-cubemap` for cubemap scenes
+
+The training results for the current out_model.pth is:
+```
+Evaluating on training domain (nn_inputs)...
+Neural Net       PSNR: 41.61, SSIM: 0.9843
+Bicubic Baseline PSNR: 29.41, SSIM: 0.9418
+Gaussian Baseline PSNR: 30.89, SSIM: 0.9349
+
+Evaluating on DIV2K validation set...
+Neural Net       PSNR: 32.40, SSIM: 0.9250
+Bicubic Baseline PSNR: 29.35, SSIM: 0.8918
+Gaussian Baseline PSNR: 28.16, SSIM: 0.8476
+```
 
 __Overlapping Objects (EC)__
 - Added overlap-aware refraction by tracking active transmissive media per ray.
