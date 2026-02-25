@@ -1,56 +1,77 @@
 Tanuj Tekkale (tt27868), Akshay Gaitonde (ag84839)
 
-__Assignment Part 1__
-- We support partial and color-filtered shadow attenuation through transmissive objects by scaling light contribution with transmissive color.
-- We determine entering/exiting behavior by checking the sign of the ray-direction dot normal term and handling refraction orientation from that.
-- We offset spawned secondary rays by a small epsilon to reduce self-intersection artifacts.
-- Triangle meshes use barycentric intersection with Phong interpolation of per-vertex normals.
-- We interpolate per-vertex diffuse/material color using barycentric weights (without normalizing material values).
-- Degenerate mesh triangles are ignored and not added to the face list.
+__Milestone 1__
+- Implemented Whitted-style shading with emissive, ambient, diffuse, and specular terms.
+- Added distance attenuation, hard/partial shadows, recursive reflection, and recursive refraction.
+- Shadow rays support color filtering through transmissive objects.
+- Secondary rays are offset with epsilon to avoid self-intersection artifacts.
+- Implemented triangle-ray intersection using barycentric coordinates.
+- Implemented Phong normal interpolation for meshes with per-vertex normals.
+- Implemented barycentric interpolation of per-vertex material color.
+- Degenerate mesh faces are skipped.
+- Added supersampling anti-aliasing with 1x1, 2x2, 3x3, and 4x4 patterns.
 
-__Assignment Part 2__
-- We use BVH acceleration at the scene level for bounded objects.
-- We also build a per-trimesh face BVH to accelerate mesh ray intersection.
-- We support cubemap loading from command line (`-c`) with smart matching of the remaining five cubemap face files.
-- For triangle meshes, backface culling is enabled for non-refraction rays and disabled for refraction rays.
+__Milestone 2__
+- Added BVH acceleration for scene objects.
+- Added per-trimesh BVH acceleration for mesh faces.
+- Added texture mapping with bilinear sampling.
+- Added cubemap support from CLI (`-c`) with smart matching of all six faces.
+- Mesh backface culling is used for non-refraction rays and disabled for refraction rays.
 
 __Creative Scene (EC)__
-- We include custom creative scenes in `assets/custom/custom.json`, `assets/custom/custom2.json`, `assets/custom/custom3.json`, and `assets/custom/custom4.json`.
-- These scenes are designed to show combined effects (multi-light shading, reflections/refractions, and complex object/layout composition).
-- Example run command: `build/bin/ray -r 5 assets/custom/custom4.json raycheck.out/custom4_preview.png`.
+- Custom scenes:
+  `assets/custom/custom.json`,
+  `assets/custom/custom2.json`,
+  `assets/custom/custom3.json`,
+  `assets/custom/custom4.json`.
+- These scenes combine multiple lights, reflective/transmissive materials, and denser scene layouts.
+- Example:
+  `build/bin/ray -r 5 assets/custom/custom4.json raycheck.out/custom4_preview.png`
 
 __Portals (EC)__
-- We implement portal rendering with paired circular/rectangular openings where rays entering one portal emerge from its linked partner.
-- Portal scenes are in `assets/custom/portal_rect.json` and `assets/custom/portal_circle.json`.
-- Example run command: `build/bin/ray -r 5 -w 640 assets/custom/portal_rect.json raycheck.out/portal_preview.png`.
+- Added linked circular/rectangular portals that teleport rays between paired openings.
+- Portal scenes:
+  `assets/custom/portal_rect.json`,
+  `assets/custom/portal_circle.json`.
+- Example:
+  `build/bin/ray -r 5 -w 640 assets/custom/portal_rect.json raycheck.out/portal_preview.png`
 
-__Neural Network (EC)__
-- We include a neural-network upsampling/anti-aliasing pipeline with baseline comparisons against bicubic and Gaussian filtering.
-- The main training/evaluation script is `ec_neuralnet.py`.
-- Inference-only usage is provided in `nn_infer.py`.
-- Example inference command: `python3 nn_infer.py --input <input_file_or_dir> --output <output_dir> --model our_model.pth --upscale 2`.
+__Neural Network Upsampling (EC)__
+- Training/evaluation script: `ec_neuralnet.py`
+- Inference script: `nn_infer.py`
+- Baselines include bicubic and Gaussian filtering.
+- Example inference:
+  `python3 nn_infer.py --input <input_file_or_dir> --output <output_dir> --model our_model.pth --upscale 2`
 
 __Overlapping Objects (EC)__
-- We add overlap-aware refraction by tracking the active transmissive media along a refraction ray.
-- The overlap-aware mode is opt-in, so required-scene behavior remains unchanged unless enabled.
-- In the common non-overlap case (air to one object and back to air), we preserve the original transition behavior.
-- For overlap/containment transitions, we use current-medium to next-medium indices for Snell refraction.
-- Assumption in ambiguous overlap regions: the effective medium is the most recently entered transmissive object.
-- Demo scene: `assets/custom/custom_overlap.json`.
-- Example run command: `RAY_ENABLE_OVERLAP_REFRACTION=1 build/bin/ray -r 7 -w 640 assets/custom/custom_overlap.json raycheck.out/overlap/custom_overlap.png`.
+- Added overlap-aware refraction by tracking active transmissive media per ray.
+- For normal single-object cases, the standard behavior is preserved.
+- For overlap/containment transitions, refraction uses the current medium index and next medium index.
+- Overlap assumption: in ambiguous overlap regions, the active medium is the most recently entered transmissive object.
+- Demo scene: `assets/custom/custom_overlap.json`
+- Example:
+  `RAY_ENABLE_OVERLAP_REFRACTION=1 build/bin/ray -r 7 -w 640 assets/custom/custom_overlap.json raycheck.out/overlap/custom_overlap.png`
 
 __Harmonic Tracing (EC)__
-- We add an opt-in harmonic tracing path that uses conservative Harnack-inspired step bounds to march rays toward level-set roots.
-- The mode is disabled by default, so required Milestone I/II behavior and performance are unaffected unless explicitly enabled.
-- We include a harmonic Riemann-surface demo (`assets/custom/harmonic_riemann.json`) and a gyroid demo (`assets/custom/harmonic_gyroid.json`).
-- Enable command (Riemann): `RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=riemann build/bin/ray -r 7 -w 640 assets/custom/harmonic_riemann.json raycheck.out/harmonic/harmonic_riemann.png`.
-- Enable command (Gyroid): `RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=gyroid build/bin/ray -r 7 -w 640 assets/custom/harmonic_gyroid.json raycheck.out/harmonic/harmonic_gyroid.png`.
+- Added optional harmonic tracing with conservative Harnack-inspired step sizes and root refinement.
+- Includes two demos:
+  `assets/custom/harmonic_riemann.json`,
+  `assets/custom/harmonic_gyroid.json`.
+- Riemann demo:
+  `RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=riemann build/bin/ray -r 7 -w 640 assets/custom/harmonic_riemann.json raycheck.out/harmonic/harmonic_riemann.png`
+- Gyroid demo:
+  `RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=gyroid build/bin/ray -r 7 -w 640 assets/custom/harmonic_gyroid.json raycheck.out/harmonic/harmonic_gyroid.png`
 
-__Build and Testing__
-- We run `./build.sh` to build in Release mode and run the test sweep.
-- The script runs baseline `raycheck` over standard scenes and writes the summary to `raycheck.out/report.csv`.
-- The script runs cubemap-specific checks and writes results to `raycheck.out/cubemap/report.csv`.
-- The script runs anti-aliasing checks for supersamples 1, 2, 3, and 4 in `raycheck.out/aa/s1` through `raycheck.out/aa/s4`.
-- The script renders portal demo outputs to `raycheck.out/portal/portal_rect.png` and `raycheck.out/portal/portal_circle.png`.
-- The script also renders the overlap demo output to `raycheck.out/overlap/custom_overlap.png`.
-- The script renders harmonic demo outputs to `raycheck.out/harmonic/harmonic_riemann.png` and `raycheck.out/harmonic/harmonic_gyroid.png`.
+__Build and Test__
+- Main script:
+  `./build.sh`
+- Outputs:
+  `raycheck.out/report.csv`
+  `raycheck.out/custom/report.csv`
+  `raycheck.out/cubemap/report.csv`
+  `raycheck.out/aa/s1/report.csv` ... `raycheck.out/aa/s4/report.csv`
+  `raycheck.out/portal/portal_rect.png`
+  `raycheck.out/portal/portal_circle.png`
+  `raycheck.out/overlap/custom_overlap.png`
+  `raycheck.out/harmonic/harmonic_riemann.png`
+  `raycheck.out/harmonic/harmonic_gyroid.png`
