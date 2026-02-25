@@ -76,6 +76,13 @@ mkdir -p raycheck.out/overlap
 RAY_ENABLE_OVERLAP_REFRACTION=1 \
   build/bin/ray -r 7 -w 640 assets/custom/custom_overlap.json raycheck.out/overlap/custom_overlap.png
 
+echo "Rendering harmonic tracing demos..."
+mkdir -p raycheck.out/harmonic
+RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=riemann \
+  build/bin/ray -r 7 -w 640 assets/custom/harmonic_riemann.json raycheck.out/harmonic/harmonic_riemann.png
+RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=gyroid \
+  build/bin/ray -r 7 -w 640 assets/custom/harmonic_gyroid.json raycheck.out/harmonic/harmonic_gyroid.png
+
 echo "Done."
 echo "Baseline report: raycheck.out/report.csv"
 echo "Custom report: raycheck.out/custom/report.csv"
@@ -83,3 +90,4 @@ echo "Cubemap report: raycheck.out/cubemap/report.csv"
 echo "AA reports: raycheck.out/aa/s1/report.csv ... raycheck.out/aa/s4/report.csv"
 echo "Portal demos: raycheck.out/portal/portal_rect.png and raycheck.out/portal/portal_circle.png"
 echo "Overlap demo: raycheck.out/overlap/custom_overlap.png"
+echo "Harmonic demos: raycheck.out/harmonic/harmonic_riemann.png and raycheck.out/harmonic/harmonic_gyroid.png"

@@ -39,6 +39,13 @@ __Overlapping Objects (EC)__
 - Demo scene: `assets/custom/custom_overlap.json`.
 - Example run command: `RAY_ENABLE_OVERLAP_REFRACTION=1 build/bin/ray -r 7 -w 640 assets/custom/custom_overlap.json raycheck.out/overlap/custom_overlap.png`.
 
+__Harmonic Tracing (EC)__
+- We add an opt-in harmonic tracing path that uses conservative Harnack-inspired step bounds to march rays toward level-set roots.
+- The mode is disabled by default, so required Milestone I/II behavior and performance are unaffected unless explicitly enabled.
+- We include a harmonic Riemann-surface demo (`assets/custom/harmonic_riemann.json`) and a gyroid demo (`assets/custom/harmonic_gyroid.json`).
+- Enable command (Riemann): `RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=riemann build/bin/ray -r 7 -w 640 assets/custom/harmonic_riemann.json raycheck.out/harmonic/harmonic_riemann.png`.
+- Enable command (Gyroid): `RAY_ENABLE_HARMONIC_TRACING=1 RAY_HARMONIC_MODE=gyroid build/bin/ray -r 7 -w 640 assets/custom/harmonic_gyroid.json raycheck.out/harmonic/harmonic_gyroid.png`.
+
 __Build and Testing__
 - We run `./build.sh` to build in Release mode and run the test sweep.
 - The script runs baseline `raycheck` over standard scenes and writes the summary to `raycheck.out/report.csv`.
@@ -46,3 +53,4 @@ __Build and Testing__
 - The script runs anti-aliasing checks for supersamples 1, 2, 3, and 4 in `raycheck.out/aa/s1` through `raycheck.out/aa/s4`.
 - The script renders portal demo outputs to `raycheck.out/portal/portal_rect.png` and `raycheck.out/portal/portal_circle.png`.
 - The script also renders the overlap demo output to `raycheck.out/overlap/custom_overlap.png`.
+- The script renders harmonic demo outputs to `raycheck.out/harmonic/harmonic_riemann.png` and `raycheck.out/harmonic/harmonic_gyroid.png`.

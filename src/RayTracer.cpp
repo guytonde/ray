@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cctype>
 #include <glm/glm.hpp>
 #include <glm/gtx/io.hpp>
 #include <string.h>
@@ -42,6 +43,146 @@ int samplesPerDimension(int configuredSamples) {
   }
   return configuredSamples;
 }
+
+struct HarmonicSample {
+  double value;
+  glm::dvec3 grad;
+  double singularDistance;
+};
+
+double realPartSqrtComplex(double x, double y) {
+  const double r = std::sqrt(x * x + y * y);
+  return std::sqrt(std::max(0.0, 0.5 * (r + x)));
+}
+
+double evaluateRiemann(const glm::dvec3 &p) {
+  return p.z - realPartSqrtComplex(p.x, p.y);
+}
+
+HarmonicSample sampleRiemann(const glm::dvec3 &p) {
+  HarmonicSample s;
+  s.value = evaluateRiemann(p);
+
+  const double r2 = p.x * p.x + p.y * p.y;
+  const double r = std::sqrt(r2);
+  s.singularDistance = r;
+
+  // Analytic gradient away from the branch singularity.
+  if (r < 1e-8) {
+    s.grad = glm::dvec3(0.0, 0.0, 1.0);
+    return s;
+  }
+
+  const double u = realPartSqrtComplex(p.x, p.y);
+  if (u < 1e-8) {
+    // Near the branch cut where u -> 0, fall back to finite differences.
+    const double eps = 1e-4;
+    const glm::dvec3 ex(eps, 0.0, 0.0);
+    const glm::dvec3 ey(0.0, eps, 0.0);
+    const glm::dvec3 ez(0.0, 0.0, eps);
+    s.grad = glm::dvec3(
+        (evaluateRiemann(p + ex) - evaluateRiemann(p - ex)) / (2.0 * eps),
+        (evaluateRiemann(p + ey) - evaluateRiemann(p - ey)) / (2.0 * eps),
+        (evaluateRiemann(p + ez) - evaluateRiemann(p - ez)) / (2.0 * eps));
+    return s;
+  }
+
+  const double drdx = p.x / r;
+  const double drdy = p.y / r;
+  const double dudx = (drdx + 1.0) / (4.0 * u);
+  const double dudy = drdy / (4.0 * u);
+  s.grad = glm::dvec3(-dudx, -dudy, 1.0);
+  return s;
+}
+
+double evaluateGyroid(const glm::dvec3 &p) {
+  return std::sin(p.x) * std::cos(p.y) + std::sin(p.y) * std::cos(p.z) +
+         std::sin(p.z) * std::cos(p.x);
+}
+
+HarmonicSample sampleGyroid(const glm::dvec3 &p) {
+  HarmonicSample s;
+  s.value = evaluateGyroid(p);
+  s.grad = glm::dvec3(std::cos(p.x) * std::cos(p.y) - std::sin(p.z) * std::sin(p.x),
+                      -std::sin(p.x) * std::sin(p.y) + std::cos(p.y) * std::cos(p.z),
+                      -std::sin(p.y) * std::sin(p.z) + std::cos(p.z) * std::cos(p.x));
+  // No singularities for the gyroid field in R^3.
+  s.singularDistance = 1e9;
+  return s;
+}
+
+HarmonicSample sampleField(const glm::dvec3 &p, RayTracer::HarmonicMode mode) {
+  return (mode == RayTracer::HarmonicMode::GYROID) ? sampleGyroid(p)
+                                                   : sampleRiemann(p);
+}
+
+glm::dvec3 baseColorAt(const glm::dvec3 &p, RayTracer::HarmonicMode mode) {
+  if (mode == RayTracer::HarmonicMode::GYROID) {
+    const glm::dvec3 c(0.5 + 0.5 * std::cos(0.9 * p.x + 0.0),
+                       0.5 + 0.5 * std::cos(0.9 * p.y + 2.1),
+                       0.5 + 0.5 * std::cos(0.9 * p.z + 4.2));
+    return glm::clamp(c, 0.0, 1.0);
+  }
+
+  const double phase = std::atan2(p.y, p.x);
+  glm::dvec3 c(0.5 + 0.45 * std::cos(phase + 0.0),
+               0.5 + 0.45 * std::cos(phase + 2.09439510239),
+               0.5 + 0.45 * std::cos(phase + 4.18879020479));
+  const double stripes = 0.5 + 0.5 * std::cos(8.0 * p.z + phase);
+  c = 0.8 * c + 0.2 * glm::dvec3(stripes);
+  return glm::clamp(c, 0.0, 1.0);
+}
+
+glm::dvec3 shadeHarmonicPoint(const Scene *scene, const ray &cameraRay,
+                              const glm::dvec3 &p, const glm::dvec3 &n,
+                              const glm::dvec3 &baseColor) {
+  const glm::dvec3 viewDir = glm::normalize(-cameraRay.getDirection());
+  glm::dvec3 color = 0.1 * baseColor + 0.25 * scene->ambient() * baseColor;
+
+  for (const auto *light : scene->getAllLights()) {
+    const glm::dvec3 l = glm::normalize(light->getDirection(p));
+    const double atten = light->distanceAttenuation(p);
+    if (atten <= 0.0) {
+      continue;
+    }
+
+    glm::dvec3 shadow(1.0);
+    if (traceUI && traceUI->shadowSw()) {
+      shadow = light->shadowAttenuation(cameraRay, p, n);
+    }
+
+    const double ndotl = std::max(0.0, glm::dot(n, l));
+    const glm::dvec3 diffuse = ndotl * baseColor;
+
+    const glm::dvec3 r = glm::normalize(2.0 * glm::dot(n, l) * n - l);
+    const double spec = std::pow(std::max(0.0, glm::dot(r, viewDir)), 72.0);
+    const glm::dvec3 specular = 0.3 * glm::dvec3(spec);
+
+    color += atten * shadow * light->getColor() * (diffuse + specular);
+  }
+
+  return glm::clamp(color, 0.0, 1.0);
+}
+
+double harnackStepSize(const HarmonicSample &s, const glm::dvec3 &dir) {
+  const double absValue = std::abs(s.value);
+  const double directionalGrad = std::abs(glm::dot(s.grad, dir));
+  const double newtonStep = absValue / std::max(1e-6, directionalGrad);
+
+  // Harnack-inspired conservative radius cap based on distance to singularities.
+  const double radiusCap = std::max(2e-4, 0.45 * s.singularDistance);
+  const double harnackStep = radiusCap * (absValue / (1.0 + absValue));
+
+  const double step = std::min(newtonStep, harnackStep);
+  return std::clamp(step, 2e-4, 0.5);
+}
+
+std::string toLowerCopy(std::string text) {
+  for (char &c : text) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return text;
+}
 } // namespace
 
 glm::dvec3 RayTracer::trace(double x, double y) {
@@ -52,6 +193,10 @@ glm::dvec3 RayTracer::trace(double x, double y) {
   ray r(glm::dvec3(0, 0, 0), glm::dvec3(0, 0, 0), glm::dvec3(1, 1, 1),
         ray::VISIBILITY);
   scene->getCamera().rayThrough(x, y, r);
+  if (harmonicTracingEnabled) {
+    return traceHarmonic(r);
+  }
+
   double dummy;
   glm::dvec3 ret =
       traceRay(r, glm::dvec3(1.0, 1.0, 1.0), traceUI->getDepth(), dummy);
@@ -99,6 +244,61 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
     pixel[2] = (int)(255.0 * col[2]);
     
     return col;
+}
+
+glm::dvec3 RayTracer::traceHarmonic(const ray &cameraRay) const {
+  const double hitEps = 1e-4;
+  const double tMin = 1e-4;
+  const double tMax = 120.0;
+  const int maxSteps = 256;
+
+  double t = tMin;
+  double prevT = tMin;
+  HarmonicSample prevSample = sampleField(cameraRay.at(t), harmonicMode);
+
+  for (int step = 0; step < maxSteps && t < tMax; ++step) {
+    const glm::dvec3 p = cameraRay.at(t);
+    const HarmonicSample s = sampleField(p, harmonicMode);
+
+    if (std::abs(s.value) <= hitEps) {
+      const glm::dvec3 n = glm::normalize(s.grad);
+      return shadeHarmonicPoint(scene.get(), cameraRay, p, n,
+                                baseColorAt(p, harmonicMode));
+    }
+
+    if (step > 0 && s.value * prevSample.value < 0.0) {
+      double lo = prevT;
+      double hi = t;
+      double flo = prevSample.value;
+      for (int i = 0; i < 24; ++i) {
+        const double mid = 0.5 * (lo + hi);
+        const double fm = sampleField(cameraRay.at(mid), harmonicMode).value;
+        if (flo * fm <= 0.0) {
+          hi = mid;
+        } else {
+          lo = mid;
+          flo = fm;
+        }
+      }
+
+      const double rootT = 0.5 * (lo + hi);
+      const glm::dvec3 hitP = cameraRay.at(rootT);
+      const HarmonicSample hitS = sampleField(hitP, harmonicMode);
+      const glm::dvec3 n = glm::normalize(hitS.grad);
+      return shadeHarmonicPoint(scene.get(), cameraRay, hitP, n,
+                                baseColorAt(hitP, harmonicMode));
+    }
+
+    const double stepSize = harnackStepSize(s, cameraRay.getDirection());
+    prevT = t;
+    prevSample = s;
+    t += stepSize;
+  }
+
+  const double v = 0.5 * (cameraRay.getDirection().y + 1.0);
+  return glm::clamp((1.0 - v) * glm::dvec3(0.01, 0.01, 0.02) +
+                        v * glm::dvec3(0.08, 0.09, 0.12),
+                    0.0, 1.0);
 }
 
 // Recursive ray tracing with reflection and refraction
@@ -244,7 +444,8 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
 
 RayTracer::RayTracer()
     : scene(nullptr), buffer(0), thresh(0), buffer_width(0), buffer_height(0),
-      m_bBufferReady(false), overlapRefractionEnabled(false) {
+      m_bBufferReady(false), overlapRefractionEnabled(false),
+      harmonicTracingEnabled(false), harmonicMode(HarmonicMode::RIEMANN) {
 }
 
 RayTracer::~RayTracer() {}
@@ -261,8 +462,30 @@ double RayTracer::aspectRatio() {
 
 bool RayTracer::loadScene(const char *fn) {
   overlapRefractionEnabled = false;
+  harmonicTracingEnabled = false;
+  harmonicMode = HarmonicMode::RIEMANN;
+  loadedScenePath = (fn != nullptr) ? std::string(fn) : std::string();
+
   if (const char *envValue = std::getenv("RAY_ENABLE_OVERLAP_REFRACTION")) {
     overlapRefractionEnabled = strcmp(envValue, "0") != 0;
+  }
+  if (const char *envValue = std::getenv("RAY_ENABLE_HARMONIC_TRACING")) {
+    harmonicTracingEnabled = strcmp(envValue, "0") != 0;
+  }
+  if (const char *envMode = std::getenv("RAY_HARMONIC_MODE")) {
+    const std::string mode = toLowerCopy(std::string(envMode));
+    if (mode == "gyroid") {
+      harmonicMode = HarmonicMode::GYROID;
+    } else if (mode == "riemann") {
+      harmonicMode = HarmonicMode::RIEMANN;
+    }
+  } else {
+    const std::string loweredPath = toLowerCopy(loadedScenePath);
+    if (loweredPath.find("gyroid") != std::string::npos) {
+      harmonicMode = HarmonicMode::GYROID;
+    } else if (loweredPath.find("riemann") != std::string::npos) {
+      harmonicMode = HarmonicMode::RIEMANN;
+    }
   }
 
   ifstream ifs(fn);

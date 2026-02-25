@@ -14,6 +14,7 @@
 #include <time.h>
 
 #include <atomic>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -30,6 +31,8 @@ public:
 
 class RayTracer {
 public:
+  enum class HarmonicMode { RIEMANN, GYROID };
+
   RayTracer();
   ~RayTracer();
 
@@ -60,6 +63,7 @@ public:
   bool stopTrace;
 
 private:
+  glm::dvec3 traceHarmonic(const ray &cameraRay) const;
   glm::dvec3 trace(double x, double y);
 
   std::unique_ptr<Scene> scene;
@@ -84,6 +88,9 @@ private:
 
   std::vector<std::thread> worker_threads;
   bool overlapRefractionEnabled;
+  bool harmonicTracingEnabled;
+  HarmonicMode harmonicMode;
+  std::string loadedScenePath;
 };
 
 #endif // __RAYTRACER_H__

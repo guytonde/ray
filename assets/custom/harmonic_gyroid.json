@@ -1,0 +1,30 @@
+[
+  {
+    "camera": {
+      "position": [0.0, 0.2, -6.3],
+      "viewdir": [0.0, -0.02, 1.0],
+      "updir": [0.0, 1.0, 0.0],
+      "fov": 38.0,
+      "aspectratio": 1.0
+    }
+  },
+  { "ambient_light": { "color": [0.05, 0.05, 0.06] } },
+  {
+    "point_light": {
+      "position": [3.6, 3.8, -2.5],
+      "color": [1.0, 0.95, 0.9],
+      "constant_attenuation_coeff": 0.25,
+      "linear_attenuation_coeff": 0.02,
+      "quadratic_attenuation_coeff": 0.003
+    }
+  },
+  {
+    "point_light": {
+      "position": [-2.8, 2.4, -2.0],
+      "color": [0.7, 0.86, 1.0],
+      "constant_attenuation_coeff": 0.25,
+      "linear_attenuation_coeff": 0.02,
+      "quadratic_attenuation_coeff": 0.003
+    }
+  }
+]
