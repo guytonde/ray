@@ -67,7 +67,6 @@ HarmonicSample sampleRiemann(const glm::dvec3 &p) {
   const double r = std::sqrt(r2);
   s.singularDistance = r;
 
-  // Analytic gradient away from the branch singularity.
   if (r < 1e-8) {
     s.grad = glm::dvec3(0.0, 0.0, 1.0);
     return s;
@@ -75,7 +74,6 @@ HarmonicSample sampleRiemann(const glm::dvec3 &p) {
 
   const double u = realPartSqrtComplex(p.x, p.y);
   if (u < 1e-8) {
-    // Near the branch cut where u -> 0, fall back to finite differences.
     const double eps = 1e-4;
     const glm::dvec3 ex(eps, 0.0, 0.0);
     const glm::dvec3 ey(0.0, eps, 0.0);
@@ -106,7 +104,6 @@ HarmonicSample sampleGyroid(const glm::dvec3 &p) {
   s.grad = glm::dvec3(std::cos(p.x) * std::cos(p.y) - std::sin(p.z) * std::sin(p.x),
                       -std::sin(p.x) * std::sin(p.y) + std::cos(p.y) * std::cos(p.z),
                       -std::sin(p.y) * std::sin(p.z) + std::cos(p.z) * std::cos(p.x));
-  // No singularities for the gyroid field in R^3.
   s.singularDistance = 1e9;
   return s;
 }
@@ -169,7 +166,6 @@ double harnackStepSize(const HarmonicSample &s, const glm::dvec3 &dir) {
   const double directionalGrad = std::abs(glm::dot(s.grad, dir));
   const double newtonStep = absValue / std::max(1e-6, directionalGrad);
 
-  // Harnack-inspired conservative radius cap based on distance to singularities.
   const double radiusCap = std::max(2e-4, 0.45 * s.singularDistance);
   const double harnackStep = radiusCap * (absValue / (1.0 + absValue));
 
@@ -367,7 +363,6 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                         const bool was_inside_hit_object =
                             (hit_object != nullptr) && r.containsMedium(hit_object);
 
-                        // Preserve legacy behavior for common non-overlap cases.
                         const bool legacy_air_to_object =
                             !was_inside_hit_object && !exiting_by_normal &&
                             (std::abs(r.currentMediumIor() - 1.0) <= 1e-9);
