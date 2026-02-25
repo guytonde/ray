@@ -5,6 +5,7 @@
 extern TraceUI *traceUI;
 
 #include "../fileio/images.h"
+#include <cmath>
 #include <glm/gtx/io.hpp>
 #include <iostream>
 
@@ -16,82 +17,57 @@ Material::~Material() {}
 // Apply the phong model to this point on the surface of the object, returning
 // the color of that point.
 glm::dvec3 Material::shade(Scene *scene, const ray &r, const isect &i) const {
-  // Get material properties at this intersection point
-  glm::dvec3 ke_val = ke(i); // Emissive
-  glm::dvec3 ka_val = ka(i); // Ambient
-  glm::dvec3 kd_val = kd(i); // Diffuse
-  glm::dvec3 ks_val = ks(i); // Specular
-  double shininess_val = shininess(i);
+  const glm::dvec3 ke_val = ke(i);
+  const glm::dvec3 ka_val = ka(i);
+  const glm::dvec3 kd_val = kd(i);
+  const glm::dvec3 ks_val = ks(i);
+  const double shininess_val = shininess(i);
 
-  // Get intersection point and normal
-  glm::dvec3 point = r.at(i.getT());
-  glm::dvec3 normal = glm::normalize(i.getN());
+  const glm::dvec3 point = r.at(i.getT());
+  glm::dvec3 shading_normal = glm::normalize(i.getN());
+  const glm::dvec3 view_dir = glm::normalize(-r.getDirection());
 
-  // View direction (from point to camera)
-  glm::dvec3 view_dir = glm::normalize(-r.getDirection());
-  glm::dvec3 shading_normal = normal;
-  const bool true_refraction_ior = index(i) > 1.0 + 1e-6;
-  if (r.type() == ray::REFRACTION && true_refraction_ior &&
+  if (r.type() == ray::REFRACTION && index(i) > 1.0 + 1e-6 &&
       glm::dot(shading_normal, view_dir) < 0.0) {
     shading_normal = -shading_normal;
   }
-  // Start with emissive and ambient components
+
   glm::dvec3 color = ke_val + ka_val * scene->ambient();
 
-  // Iterate through all lights
   for (const auto &pLight : scene->getAllLights()) {
-    glm::dvec3 light_dir = glm::normalize(pLight->getDirection(point));
-    double atten = pLight->distanceAttenuation(point);
-    glm::dvec3 shadow_atten(1.0, 1.0, 1.0);
-    const bool eta1_refraction_ray =
-        (r.type() == ray::REFRACTION) && Trans() &&
-        (std::abs(index(i) - 1.0) < 1e-6);
-    const bool both_refraction_ray =
-        (r.type() == ray::REFRACTION) && Both();
-    const bool matte_transparent_visibility =
-        (r.type() == ray::VISIBILITY) && Trans() && !Spec();
-    if (traceUI->shadowSw() && !eta1_refraction_ray && !both_refraction_ray &&
-        !matte_transparent_visibility) {
-      shadow_atten = pLight->shadowAttenuation(r, point, shading_normal);
+    const glm::dvec3 light_dir = glm::normalize(pLight->getDirection(point));
+    const double atten = pLight->distanceAttenuation(point);
+    if (atten <= 0.0) {
+      continue;
     }
 
-    glm::dvec3 light_contribution = atten * shadow_atten * pLight->getColor();
+    glm::dvec3 shadow_atten(1.0);
+    if (traceUI->shadowSw()) {
+      shadow_atten = pLight->shadowAttenuation(r, point, shading_normal);
+    }
+    if (glm::length(shadow_atten) <= 1e-8) {
+      continue;
+    }
 
-    const double n_dot_l_raw = glm::dot(shading_normal, light_dir);
-    const bool primary_visibility = (r.type() == ray::VISIBILITY);
-    const bool secondary_eta1_refraction =
-        (r.type() == ray::REFRACTION) && Trans() &&
-        (std::abs(index(i) - 1.0) < 1e-6);
-    const bool primary_transparent = primary_visibility && Trans();
-    const bool secondary_matte_refraction =
-        (r.type() == ray::REFRACTION) && Trans() && !Spec();
-    const bool one_sided = (!primary_transparent && primary_visibility) ||
-                           secondary_eta1_refraction ||
-                           secondary_matte_refraction;
-    const double n_dot_l =
-        one_sided ? glm::max(0.0, n_dot_l_raw) : std::abs(n_dot_l_raw);
-    glm::dvec3 diffuse = kd_val * n_dot_l;
+    const double n_dot_l = glm::dot(shading_normal, light_dir);
+    const double diffuse_term = glm::max(0.0, n_dot_l);
+    const glm::dvec3 diffuse = kd_val * diffuse_term;
 
-    glm::dvec3 specular(0.0, 0.0, 0.0);
+    glm::dvec3 specular(0.0);
     const bool allow_backface_spec = traceUI->backfaceSpecular();
-    const bool do_specular =
-        shininess_val > 0.0 &&
-        (one_sided ? (n_dot_l_raw > 0.0)
-                    : (n_dot_l_raw > 0.0 || allow_backface_spec));
-    if (do_specular) {
-      const double spec_n_dot_l =
-          one_sided
-              ? n_dot_l_raw
-              : (allow_backface_spec ? std::abs(n_dot_l_raw) : n_dot_l_raw);
-      glm::dvec3 reflect_dir =
-          glm::normalize((2.0 * spec_n_dot_l * shading_normal) - light_dir);
-      double r_dot_v = glm::max(0.0, glm::dot(reflect_dir, view_dir));
-      if (r_dot_v > 0.0) {
-        specular = ks_val * pow(r_dot_v, shininess_val);
+    if (shininess_val > 0.0 && (n_dot_l > 0.0 || allow_backface_spec)) {
+      const double spec_n_dot_l = allow_backface_spec ? std::abs(n_dot_l) : n_dot_l;
+      if (spec_n_dot_l > 0.0) {
+        const glm::dvec3 reflect_dir =
+            glm::normalize((2.0 * spec_n_dot_l * shading_normal) - light_dir);
+        const double r_dot_v = glm::max(0.0, glm::dot(reflect_dir, view_dir));
+        if (r_dot_v > 0.0) {
+          specular = ks_val * std::pow(r_dot_v, shininess_val);
+        }
       }
     }
 
-    color += light_contribution * (diffuse + specular);
+    color += atten * shadow_atten * pLight->getColor() * (diffuse + specular);
   }
 
   return color;
@@ -110,6 +86,7 @@ TextureMap::TextureMap(string filename) {
 }
 
 glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
+  // YOUR CODE HERE
   if (width <= 0 || height <= 0 || data.empty()) return glm::dvec3(0.0);
 
   // Clamp UV to [0,1]
@@ -139,6 +116,7 @@ glm::dvec3 TextureMap::getMappedValue(const glm::dvec2 &coord) const {
 }
 
 glm::dvec3 TextureMap::getPixelAt(int x, int y) const {
+  // YOUR CODE HERE
   if (width <= 0 || height <= 0 || data.empty()) return glm::dvec3(0.0);
 
   x = std::clamp(x, 0, width - 1);

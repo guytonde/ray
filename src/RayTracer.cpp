@@ -25,6 +25,24 @@ extern TraceUI *traceUI;
 
 bool debugMode = false;
 
+namespace {
+int samplesPerDimension(int configuredSamples) {
+  if (configuredSamples <= 1) {
+    return 1;
+  }
+  // GUI slider semantics: 1..4 means 1x1, 2x2, 3x3, 4x4.
+  if (configuredSamples <= 4) {
+    return configuredSamples;
+  }
+  // Backward compatibility: allow legacy total sample values 9 or 16.
+  const int root = static_cast<int>(std::sqrt(configuredSamples));
+  if (root * root == configuredSamples) {
+    return root;
+  }
+  return configuredSamples;
+}
+} // namespace
+
 glm::dvec3 RayTracer::trace(double x, double y) {
   if (TraceUI::m_debug) {
     scene->clearIntersectCache();
@@ -46,20 +64,21 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
     if (!sceneLoaded())
         return col;
 
-    // Support for supersampling
-    int sqrt_samples = (int)sqrt(samples);
-    
-    if (sqrt_samples <= 1) {
-        // No anti-aliasing - single sample
+    const int samples_per_dim =
+        (traceUI != nullptr && traceUI->aaSwitch())
+            ? samplesPerDimension(samples)
+            : 1;
+    const int total_samples = samples_per_dim * samples_per_dim;
+
+    if (samples_per_dim <= 1) {
         double x = double(i) / double(buffer_width);
         double y = double(j) / double(buffer_height);
         col = trace(x, y);
     } else {
-        // Anti-aliasing - multiple samples per pixel
-        double sample_offset = 1.0 / sqrt_samples;
+        double sample_offset = 1.0 / samples_per_dim;
         
-        for (int si = 0; si < sqrt_samples; ++si) {
-            for (int sj = 0; sj < sqrt_samples; ++sj) {
+        for (int si = 0; si < samples_per_dim; ++si) {
+            for (int sj = 0; sj < samples_per_dim; ++sj) {
                 // Sample at center of sub-pixel
                 double x = (double(i) + (si + 0.5) * sample_offset) / double(buffer_width);
                 double y = (double(j) + (sj + 0.5) * sample_offset) / double(buffer_height);
@@ -68,8 +87,7 @@ glm::dvec3 RayTracer::tracePixel(int i, int j) {
             }
         }
         
-        // Average all samples
-        col /= double(samples);
+        col /= double(total_samples);
     }
 
     col = glm::clamp(col, 0.0, 1.0);
@@ -87,16 +105,12 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
                                double &t) {
     isect i;
     glm::dvec3 colorC;
-    bool clamp_output = true;
 #if VERBOSE
     std::cerr << "== current depth: " << depth << std::endl;
 #endif
     
     if (scene->intersect(r, i)) {
         const Material &m = i.getMaterial();
-        if (m.Both() && r.type() != ray::VISIBILITY) {
-            clamp_output = false;
-        }
         colorC = m.shade(scene.get(), r, i);
 
         const glm::dvec3 point = r.at(i.getT());
@@ -179,38 +193,8 @@ glm::dvec3 RayTracer::traceRay(ray &r, const glm::dvec3 &thresh, int depth,
     std::cerr << "== depth: " << depth + 1 << " done, returning: " << colorC
               << std::endl;
 #endif
-    return clamp_output ? glm::clamp(colorC, 0.0, 1.0) : colorC;
+    return colorC;
 }
-
-// Anti-aliasing by supersampling
-// glm::dvec3 RayTracer::ssPixel(int i, int j, int dim) {
-//   glm::dvec3 accum(0.0);
-
-//   if (!sceneLoaded())
-//     return accum;
-
-//   const double pixelWidth = 1.0 / double(buffer_width);
-//   const double pixelHeight = 1.0 / double(buffer_height);
-//   const double subWidth = pixelWidth / double(dim);
-//   const double subHeight = pixelHeight / double(dim);
-
-//   for (int sy = 0; sy < dim; ++sy) {
-//     for (int sx = 0; sx < dim; ++sx) {
-//       const double x = (double(i) + (sx + 0.5) / dim) * pixelWidth;
-//       const double y = (double(j) + (sy + 0.5) / dim) * pixelHeight;
-//       accum += trace(x, y);
-//     }
-//   }
-
-//   glm::dvec3 col = accum / double(dim * dim);
-
-//   unsigned char *pixel = buffer.data() + (i + j * buffer_width) * 3;
-//   pixel[0] = (int)(255.0 * col[0]);
-//   pixel[1] = (int)(255.0 * col[1]);
-//   pixel[2] = (int)(255.0 * col[2]);
-
-//   return col;
-// }
 
 RayTracer::RayTracer()
     : scene(nullptr), buffer(0), thresh(0), buffer_width(0), buffer_height(0),
@@ -341,61 +325,8 @@ void RayTracer::traceImage(int w, int h) {
 }
 
 int RayTracer::aaImage() {
-    if (!sceneLoaded() || samples <= 1)
-        return 0;
-    
-    int pixels_aa = 0;
-    int samples_per_dim = samples;
-    const int sqrt_samples = (int)std::sqrt(samples);
-    if (sqrt_samples * sqrt_samples == samples) {
-        // Accept legacy "total samples" values like 1, 4, 9, 16.
-        samples_per_dim = sqrt_samples;
-    }
-    const int total_samples = samples_per_dim * samples_per_dim;
-    
-    for (int j = 0; j < buffer_height; ++j) {
-        for (int i = 0; i < buffer_width; ++i) {
-            // Check if this pixel needs anti-aliasing by comparing with neighbors
-            glm::dvec3 current = getPixel(i, j);
-            bool needs_aa = false;
-            
-            // Check right neighbor
-            if (i < buffer_width - 1) {
-                glm::dvec3 right = getPixel(i + 1, j);
-                if (glm::length(current - right) > aaThresh) {
-                    needs_aa = true;
-                }
-            }
-            
-            // Check bottom neighbor
-            if (j < buffer_height - 1) {
-                glm::dvec3 bottom = getPixel(i, j + 1);
-                if (glm::length(current - bottom) > aaThresh) {
-                    needs_aa = true;
-                }
-            }
-            
-            // If edge detected, apply supersampling
-            if (needs_aa) {
-                glm::dvec3 col(0, 0, 0);
-                double sample_offset = 1.0 / samples_per_dim;
-                
-                for (int si = 0; si < samples_per_dim; ++si) {
-                    for (int sj = 0; sj < samples_per_dim; ++sj) {
-                        double x = (double(i) + (si + 0.5) * sample_offset) / double(buffer_width);
-                        double y = (double(j) + (sj + 0.5) * sample_offset) / double(buffer_height);
-                        col += trace(x, y);
-                    }
-                }
-                
-                col /= double(total_samples);
-                setPixel(i, j, col);
-                pixels_aa++;
-            }
-        }
-    }
-    
-    return pixels_aa;
+    // Supersampling is applied directly in tracePixel().
+    return 0;
 }
 
 bool RayTracer::checkRender() {

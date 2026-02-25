@@ -125,7 +125,7 @@ bool TrimeshFace::intersectLocal(ray &r, isect &i) const {
     glm::dvec3 h = glm::cross(r.getDirection(), edge2);
     double det = glm::dot(edge1, h);
     
-    const bool cull_backfaces = false;
+    const bool cull_backfaces = (r.type() != ray::REFRACTION);
     if (cull_backfaces) {
         if (det < TRI_EPSILON) {
             return false;

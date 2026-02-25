@@ -8,6 +8,7 @@
 extern TraceUI *traceUI;
 
 glm::dvec3 CubeMap::getColor(ray r) const {
+  // YOUR CODE HERE
   glm::dvec3 d = glm::normalize(r.getDirection());
 
   const double ax = std::abs(d.x);
