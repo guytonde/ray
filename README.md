@@ -39,9 +39,15 @@ __Portals (EC)__
 __Neural Network Upsampling (EC)__
 - Training/evaluation script: `ec_neuralnet.py`
 - Inference script: `nn_infer.py`
-- Baselines include bicubic and Gaussian filtering.
-- Example inference:
-  `python3 nn_infer.py --input <input_file_or_dir> --output <output_dir> --model our_model.pth --upscale 2`
+- `nn_infer.py` supports post-processing existing images: `--input <image_or_dir>`.
+- `nn_infer.py` also supports end-to-end ray trace + post-process: `--scene <scene_file>`.
+- In scene mode, the script runs the ray tracer first, then applies NN upsampling/antialiasing.
+- Extra ray-tracer flags can be passed through with `--ray-args ...`.
+- Baselines include bicubic and Gaussian filtering, and `--render-reference` prints PSNR comparisons.
+- Example (full pipeline, with baseline comparison):
+  `python3 nn_infer.py --scene assets/custom/custom.json --output raycheck.out/nn_demo --model our_model.pth --upscale 2 --render-width 320 --render-reference --save-comparison --ray-args -r 5`
+- Example (inference-only on existing image):
+  `python3 nn_infer.py --input raycheck.out/base/image/simple_box.png --output raycheck.out/nn_demo --model our_model.pth --upscale 2`
 
 __Overlapping Objects (EC)__
 - Added overlap-aware refraction by tracking active transmissive media per ray.
